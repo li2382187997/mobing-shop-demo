@@ -1,0 +1,1842 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>馍饼店 · 田园小摊</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #ded7c9; touch-action: none; }
+    canvas { display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <script>
+const FOODS = [
+  {id:'big_bun',name:'大馒头',station:'蒸笼',ingredients:['原味'],price:1,art:'round_bun',shapeCount:3,motions:['tap','tap','tap']},
+  {id:'small_bun',name:'小馒头',station:'蒸笼',ingredients:['原味'],price:0.5,art:'square_bun',shapeCount:2,motions:['tap','tap']},
+  {id:'twist',name:'花卷',station:'蒸笼',ingredients:['香葱'],price:2,art:'flower_roll',shapeCount:3,motions:['horizontal','horizontal','diagonal']},
+  {id:'chive_cake',name:'韭菜饼',station:'平底锅',ingredients:['韭菜'],price:2,art:'filled_pie',shapeCount:3,motions:['horizontal','vertical','horizontal']},
+  {id:'shepherd_cake',name:'荠菜饼',station:'平底锅',ingredients:['荠菜'],price:2,art:'filled_pie',shapeCount:3,motions:['horizontal','vertical','horizontal']},
+  {id:'beef_cake',name:'牛肉饼',station:'平底锅',ingredients:['牛肉'],price:6,art:'filled_pie',shapeCount:3,motions:['horizontal','vertical','horizontal']},
+  {id:'chive_box',name:'韭菜盒子',station:'平底锅',ingredients:['韭菜'],price:4,art:'half_moon',shapeCount:2,motions:['vertical','horizontal']},
+  {id:'scallion_cake',name:'葱油饼',station:'平底锅',ingredients:['香葱'],price:8,art:'large_pancake',shapeCount:3,cutCount:3,motions:['horizontal','circle','horizontal']},
+  {id:'sesame_cake',name:'芝麻糖饼',station:'烙饼台',ingredients:['芝麻糖'],price:2.5,art:'filled_pie',shapeCount:3,motions:['horizontal','vertical','horizontal']},
+  {id:'sauce_cake',name:'酱香饼',station:'烙饼台',ingredients:['香葱','酱香酱'],price:8,art:'sauce_pancake',shapeCount:3,cutCount:3,motions:['horizontal','horizontal','horizontal']},
+  {id:'pork_bun',name:'煎包（猪肉馅）',station:'蒸煎锅',ingredients:['猪肉'],price:4,art:'dumpling',shapeCount:3,motions:['vertical','vertical','horizontal']},
+  {id:'potstick_mo',name:'锅贴馍',station:'蒸煎锅',ingredients:['香葱'],price:3,art:'potstick',shapeCount:2,motions:['horizontal','horizontal']},
+  {id:'egg_pancake',name:'鸡蛋饼',station:'平底锅',ingredients:['鸡蛋','香葱'],price:8,art:'egg_pancake',shapeCount:3,cutCount:3}
+];
+const STATIONS = ['蒸笼','平底锅','蒸煎锅','烙饼台'];
+const INGREDIENTS = ['原味','香葱','韭菜','荠菜','牛肉','猪肉','芝麻糖','酱香酱','鸡蛋'];
+const PREP_SEQUENCE={greens:['香葱','韭菜','荠菜'],fillings:['猪肉','牛肉','芝麻糖','酱香酱','鸡蛋']};
+const SUPPLY_PRICES={猪肉:2,牛肉:3,芝麻糖:1,酱香酱:2,鸡蛋:1};
+const CUSTOMERS = [
+  ['周师傅','#A9D7DA','#547C86'],['小禾','#FAD5A9','#E39D87'],['陈奶奶','#CBBBDD','#7D6D99'],
+  ['上班族','#A9CBEB','#6387B4'],['学生','#F7CA9E','#DF8D7D'],['菜市场摊主','#BBDAAB','#789A66'],
+  ['外卖骑手','#FFE49F','#DA9D58'],['带孩子的家长','#EEBAD1','#AF7390'],['晨练老人','#C1D1C0','#769276'],
+  ['路过的游客','#D1C4EE','#8B79B9'],['邻店老板','#E4BFAE','#AB796A'],['放学孩子','#F7C6D9','#B97999'],
+  ['夜班护士','#C9E5E0','#6D9E99'],['修鞋师傅','#DABFA7','#956F58'],['摄影爱好者','#C9C0E5','#8177A8'],['社区阿姨','#F3D0B5','#B78065']
+].map(([name,color,accent])=>({name,color,accent}));
+const byId = Object.fromEntries(FOODS.map(f=>[f.id,f]));
+const needsFlip = food => food.station !== '蒸笼' && food.id !== 'egg_pancake';
+const COOK_OFFSETS={small_bun:-5,twist:2,chive_cake:-2,shepherd_cake:-1,beef_cake:8,chive_box:1,scallion_cake:-4,sesame_cake:-2,sauce_cake:2,pork_bun:6,potstick_mo:3};
+const COOK_CUES={
+  big_bun:['大圆面胚在蒸汽里慢慢鼓起','圆馒头蓬松了，可以出笼'],small_bun:['方馒头的棱角正变柔软','两只小方馒头蒸得蓬松了'],
+  twist:['花卷的卷层慢慢膨开','葱花藏在褶皱里，香气出来了'],chive_cake:['韭菜馅透出鲜绿','饼皮两面金黄，韭菜香出来了'],
+  shepherd_cake:['荠菜碎在薄饼里冒香','荠菜饼的边缘煎黄了'],beef_cake:['厚肉饼的边缘刚开始上色','厚肉饼煎透，外层焦香'],
+  chive_box:['半月花边正在定形','盒子的花边酥脆了'],scallion_cake:['薄饼起层，葱香渐浓','葱油饼层层金黄，可以切块'],
+  sesame_cake:['芝麻糖馅在饼里慢慢融化','芝麻表面微黄，糖香出来了'],sauce_cake:['大饼表面慢慢起泡','饼已烙好，出锅后记得刷酱'],
+  pork_bun:['煎包底部正在煎出金边','面皮蒸软，底部煎出脆壳'],potstick_mo:['长条馍贴锅慢慢定形','锅贴馍底部煎出金黄脆壳'],
+  egg_pancake:['蛋液渐渐凝固，葱花飘香','鸡蛋饼熟了，出锅后切块']
+};
+const FOOD_REACTIONS={
+  big_bun:['圆圆的大馒头真松软！','大馒头再蒸松一点会更香。'],small_bun:['小方馒头一口一个！','小方馒头再蒸软一点更好。'],
+  twist:['花卷的葱香一层层飘出来！','花卷的褶皱再蒸松一点吧。'],chive_cake:['韭菜饼的馅真鲜！','韭菜饼再煎香一点就好啦。'],
+  shepherd_cake:['荠菜清香，饼皮也脆！','荠菜饼的边再烙香一点。'],beef_cake:['牛肉饼厚实又多汁！','牛肉饼的火候再稳一点。'],
+  chive_box:['韭菜盒子的花边真漂亮！','盒子的花边再煎脆一点。'],scallion_cake:['葱油饼切得整齐，层层香！','葱油饼再烙出些层次。'],
+  sesame_cake:['芝麻糖心甜甜的！','芝麻糖饼再烙香一点。'],sauce_cake:['酱香饼刷得香浓又均匀！','酱香饼的酱味再浓一点。'],
+  pork_bun:['煎包底脆，猪肉馅鲜！','煎包的底再煎脆一点。'],potstick_mo:['锅贴馍底脆上面软！','锅贴馍的底再煎黄一点。'],
+  egg_pancake:['鸡蛋抹得匀，香葱真香！','鸡蛋饼再煎得均匀一点。']
+};
+
+class Game {
+  constructor(saved={},random=Math.random) {
+    this.random=random;
+    this.day=Number.isFinite(saved.day)?Math.max(1,saved.day):1;
+    this.coins=Number.isFinite(saved.coins)?Math.max(0,saved.coins):120;
+    this.upgrades=saved.upgrades&&typeof saved.upgrades==='object'?{...saved.upgrades}:{};
+    this.totalSales=Object.fromEntries(FOODS.map(f=>[f.id,Math.max(0,Number(saved.totalSales?.[f.id])||0)]));
+    this.customerVisits=Object.fromEntries(CUSTOMERS.map(c=>[c.name,Math.max(0,Number(saved.customerVisits?.[c.name])||0)]));
+    this.customerFavorites=Object.fromEntries(Object.entries(saved.customerFavorites||{}).filter(([name,id])=>CUSTOMERS.some(c=>c.name===name)&&!!byId[id]));
+    this.reputation=Math.max(0,Number(saved.reputation)||0);
+    this.phase='welcome'; this.orders=[]; this.selectedId=null; this.nextId=1;
+    this.stock={dough:0,greens:0,fillings:0,...saved.pantry?.stock};this.prepared={...saved.pantry?.prepared};this.prepChoice={greens:0,fillings:0};
+    this.prepWork={dough:0,greens:0,...saved.pantry?.prepWork};this.gardenCrop=saved.pantry?.gardenCrop||null;this.purchased={...saved.pantry?.purchased};
+    this.supplySystemEnabled=!!saved.pantry?.enabled;
+    this.farm=saved.pantry?.farm?JSON.parse(JSON.stringify(saved.pantry.farm)):null;
+    this.visitors=0; this.targetVisitors=9+Math.floor(this.random()*4);
+    this.revenue=0; this.costs=0; this.sales=Object.fromEntries(FOODS.map(f=>[f.id,0]));
+    this.tips=0;this.qualityTotal=0;this.perfects=0;this.repeatCustomers=0;
+    this.message='今天也做香香的馍饼吧！'; this.lastReaction='';
+    this.restoreSession(saved.session);
+    this.mergeScallions();
+    if(saved.pantry?.prepared||saved.session?.prepared)this.syncGreensStock();
+  }
+  mergeScallions(){
+    const merge=values=>{if(!values)return;for(const old of ['大葱花','大葱']){if(values[old])values['香葱']=(Number(values['香葱'])||0)+(Number(values[old])||0);delete values[old];}};
+    const rename=name=>['大葱花','大葱'].includes(name)?'香葱':name;
+    merge(this.prepared);this.gardenCrop=rename(this.gardenCrop);
+    const f=this.farm;if(!f)return;
+    merge(f.whole);
+    for(const key of ['seed','chopCrop','chopChoice'])f[key]=rename(f[key]);
+    for(const tile of f.vegetables||[])tile.crop=rename(tile.crop);
+    if(f.cutProgress){for(const old of ['大葱花','大葱']){if(f.cutProgress[old])f.cutProgress['香葱']=Math.max(f.cutProgress['香葱']||0,f.cutProgress[old]);delete f.cutProgress[old];}}
+  }
+  syncGreensStock(){
+    this.stock.greens=PREP_SEQUENCE.greens.reduce((sum,name)=>sum+Math.max(0,Number(this.prepared[name])||0),0);
+    return this.stock.greens;
+  }
+  restoreSession(session){
+    if(!session||!['prep','business','close'].includes(session.phase))return false;
+    this.phase=session.phase;this.stock={dough:0,greens:0,fillings:0,...session.stock};
+    this.prepWork={dough:0,greens:0,...session.prepWork};this.gardenCrop=session.gardenCrop||null;this.purchased={...session.purchased};
+    this.supplySystemEnabled=!!session.supplySystemEnabled;
+    this.prepChoice={greens:0,fillings:0};
+    for(const kind of ['greens','fillings']){const choice=Number(session.prepChoice?.[kind]);if(Number.isInteger(choice)&&choice>=0)this.prepChoice[kind]=choice%PREP_SEQUENCE[kind].length;}
+    this.prepared=session.prepared&&typeof session.prepared==='object'?{...session.prepared}:{};
+    if(!session.prepared)for(const kind of ['greens','fillings'])for(const name of PREP_SEQUENCE[kind].slice(0,Math.max(0,Math.min(PREP_SEQUENCE[kind].length,this.stock[kind]||0))))this.prepared[name]=(this.prepared[name]||0)+1;
+    this.visitors=Math.max(0,Number(session.visitors)||0);this.targetVisitors=Math.max(this.visitors,Number(session.targetVisitors)||this.targetVisitors);
+    this.revenue=Math.max(0,Number(session.revenue)||0);this.costs=Math.max(0,Number(session.costs)||0);this.tips=Math.max(0,Number(session.tips)||0);this.qualityTotal=Math.max(0,Number(session.qualityTotal)||0);this.perfects=Math.max(0,Number(session.perfects)||0);this.repeatCustomers=Math.max(0,Number(session.repeatCustomers)||0);
+    this.sales=Object.fromEntries(FOODS.map(f=>[f.id,Math.max(0,Number(session.sales?.[f.id])||0)]));
+    this.orders=(Array.isArray(session.orders)?session.orders:[]).map(raw=>{
+      const food=byId[raw.foodId],customer=CUSTOMERS.find(c=>c.name===raw.customerName);if(!food||!customer)return null;
+      const copy={...raw,food,customer};if(typeof copy.familiarOrder!=='boolean')copy.familiarOrder=(this.customerFavorites[customer.name]===food.id);delete copy.foodId;delete copy.customerName;return copy;
+    }).filter(Boolean);
+    this.syncGreensStock();
+    this.nextId=Math.max(Number(session.nextId)||1,...this.orders.map(o=>o.id+1));
+    this.selectedId=this.orders.some(o=>o.id===session.selectedId)?session.selectedId:this.orders[0]?.id||null;return true;
+  }
+  pick(a){return a[Math.min(a.length-1,Math.floor(this.random()*a.length))];}
+  beginPrep(){if(this.phase!=='welcome')return false;this.phase='prep';this.supplySystemEnabled=true;return true;}
+  prepSelected(kind){const choices=PREP_SEQUENCE[kind];return choices?.[this.prepChoice[kind]||0]||null;}
+  cyclePrep(kind,direction=1){const choices=PREP_SEQUENCE[kind];if(!['prep','business','close'].includes(this.phase)||!choices||!Number.isFinite(direction)||kind==='greens'&&this.prepWork.greens>0)return false;this.prepChoice[kind]=((this.prepChoice[kind]||0)+Math.sign(direction)+choices.length)%choices.length;return true;}
+  prepare(kind){
+    const limits={dough:6,greens:5,fillings:5},steps={dough:2,greens:1,fillings:1};
+    if(!['prep','business','close'].includes(this.phase)||!limits[kind]||this.stock[kind]>=limits[kind])return false;
+    if(PREP_SEQUENCE[kind]){const name=kind==='greens'&&this.gardenCrop||this.prepSelected(kind);this.prepared[name]=(this.prepared[name]||0)+1;}
+    this.stock[kind]=Math.min(limits[kind],this.stock[kind]+steps[kind]);return true;
+  }
+  advancePrep(kind){
+    if(!['prep','business','close'].includes(this.phase)||!['dough','greens'].includes(kind)||this.stock[kind]>=(kind==='dough'?6:5))return false;
+    if(kind==='greens'&&this.prepWork.greens===0)this.gardenCrop=this.prepSelected('greens');
+    if(this.prepWork[kind]<3){this.prepWork[kind]++;return true;}
+    if(!this.prepare(kind))return false;
+    this.prepWork[kind]=0;if(kind==='greens')this.gardenCrop=null;return true;
+  }
+  buySupply(name){
+    const price=SUPPLY_PRICES[name];
+    if(!['prep','business','close'].includes(this.phase)||!price||this.coins<price)return false;
+    this.coins-=price;this.costs+=price;this.stock.fillings++;this.prepared[name]=(this.prepared[name]||0)+1;this.purchased[name]=(this.purchased[name]||0)+1;return true;
+  }
+  prepReady(){return this.stock.dough>=2&&this.stock.greens>=1&&this.stock.fillings>=1;}
+  buySeed(name){
+    if(!['prep','business','close'].includes(this.phase)||!PREP_SEQUENCE.greens.includes(name)||this.coins<.5)return false;
+    this.coins-=.5;this.costs+=.5;return true;
+  }
+  prepFull(){return this.stock.dough>=6&&this.stock.greens>=5&&this.stock.fillings>=5;}
+  openShop(){
+    if(this.phase!=='prep'||!this.prepReady())return false;
+    this.phase='business';while(this.orders.length<3&&this.orders.length<this.targetVisitors)this.addOrder();
+    this.selectedId=this.orders[0].id;return true;
+  }
+  startDay(){
+    if(this.phase!=='welcome')return false;
+    this.phase='business';
+    while(this.orders.length<3&&this.orders.length<this.targetVisitors)this.addOrder();
+    this.selectedId=this.orders[0].id; return true;
+  }
+  addOrder(){
+    const used=this.orders.map(o=>o.customer.name);
+    const pool=CUSTOMERS.filter(c=>!used.includes(c.name));
+    const customer=this.pick(pool.length?pool:CUSTOMERS),usedFoods=this.orders.map(o=>o.food.id),foodPool=FOODS.filter(f=>!usedFoods.includes(f.id));
+    const favorite=byId[this.customerFavorites[customer.name]],available=foodPool.length?foodPool:FOODS;
+    const food=favorite&&available.includes(favorite)&&this.random()<.65?favorite:this.pick(available);
+    const preference=food.station==='蒸笼'?'soft':this.pick(['soft','normal','crispy']);
+    const slot=[0,1,2].find(s=>!this.orders.some(o=>o.slot===s));
+    this.orders.push({id:this.nextId++,slot,customer,food,preference,state:'waiting',kneads:0,ingredientIndex:0,
+      shapes:0,cook:0,heat:'medium',flipped:false,flipAt:0,cuts:0,quality:0,patience:100,familiarOrder:(this.customerVisits[customer.name]||0)>0&&this.customerFavorites[customer.name]===food.id});
+  }
+  get selected(){return this.orders.find(o=>o.id===this.selectedId)||null;}
+  orderAt(slot){return this.orders.find(o=>o.slot===slot)||null;}
+  select(id){if(!this.orders.some(o=>o.id===id))return false;this.selectedId=id;return true;}
+  request(o){
+    const wish=o.preference==='crispy'?'焦香一点':o.preference==='soft'?'软乎一点':'平常火候';
+    return `${o.food.name}，${wish}`;
+  }
+  instruction(o=this.selected){
+    if(!o)return '点一位客人开始';
+    if(o.food.id==='egg_pancake'){
+      const hints={waiting:'把面糊拖进这口锅',batter_spread:'在锅里划动，摊开面糊',egg_add:'把鸡蛋拖到饼面上',egg_spread:'划动饼面，把鸡蛋抹匀',scallion_add:'撒上香葱'};
+      if(hints[o.state])return hints[o.state];
+    }
+    if(o.food.id==='sauce_cake'&&o.state==='sauce')return '把酱香酱拖来，用刷子均匀刷开';
+    if(o.food.id==='sauce_cake'&&o.state==='sauce_spread')return `在饼面来回刷酱 ${Math.floor(o.sauceSpreads||0)}/3`;
+    if(o.state==='waiting')return '把面团拖到这块案板';
+    if(o.state==='knead')return `左右揉面 ${o.kneads}/3`;
+    if(o.state==='ingredient'){const total=o.food.id==='sauce_cake'?1:o.food.ingredients.length;return `加入${o.food.ingredients[o.ingredientIndex]} ${o.ingredientIndex}/${total}`;}
+    if(o.state==='shape'){
+      const words={round_bun:'团成大圆馒头',square_bun:'压边做成方馒头',flower_roll:'卷起再扭出花卷褶皱',
+        filled_pie:'擀圆后收口',half_moon:'两边合成半月形',large_pancake:'擀成一张大圆饼',
+        sauce_pancake:'摊成一张大圆饼',dumpling:'捏出饺子形褶边',potstick:'捏成长条锅贴',egg_pancake:'把鸡蛋在大饼上抹匀'};
+      if(o.food.art==='flower_roll')return `${['把葱花面片擀成长条','从一端卷成面卷','交叉扭出花卷褶皱'][o.shapes]||'扭成花卷'} ${o.shapes}/${o.food.shapeCount}`;
+      if(o.food.art==='round_bun')return `${['收拢面片边缘','双手团成圆胚','轻压表面，留出蒸发空间'][o.shapes]} ${o.shapes}/${o.food.shapeCount}`;
+      if(o.food.art==='square_bun')return `${['把面片压成长方形','分成两只方方的小馒头'][o.shapes]} ${o.shapes}/${o.food.shapeCount}`;
+      const steps={chive_cake:['把韭菜碎铺在面片中间','向中心捏紧收口','轻轻压成圆饼'],shepherd_cake:['铺上切细的荠菜','包住荠菜馅并收口','压成薄圆饼'],beef_cake:['放上牛肉馅','沿边捏严实防漏汁','压成厚实肉饼'],chive_box:['把韭菜馅铺在半边','折起面皮并压出半月花边'],scallion_cake:['撒香葱卷起面片','盘成圆形面团','擀成一张大圆饼'],sesame_cake:['把芝麻糖馅放在中间','收口包住糖馅','压成圆饼并撒芝麻'],sauce_cake:['擀薄面片','铺平压圆','摊成一张大饼'],pork_bun:['放入猪肉馅','对折捏出饺子形','沿边捏出密密的褶'],potstick_mo:['拉成长条面片','撒葱后卷成长条锅贴']};
+      if(steps[o.food.id])return `${steps[o.food.id][o.shapes]} ${o.shapes}/${o.food.shapeCount}`;
+      return `${words[o.food.art]} ${o.shapes}/${o.food.shapeCount}`;
+    }
+    if(o.state==='station')return `把它拖进${o.food.station}`;
+    if(o.state==='cooking'){
+      const cues=COOK_CUES[o.food.id]||['慢慢加热','火候到了，可以出锅'];
+      if(needsFlip(o.food)&&!o.flipped&&o.cook>=30)return `上划翻面 · ${cues[0]}`;
+      return o.cook>=this.cookTarget(o)-8?cues[1]:cues[0];
+    }
+    if(o.state==='cut')return `${['横着切第一刀','斜着切第二刀','反方向切第三刀'][o.cuts]||'把大饼切块'} ${o.cuts}/${o.food.cutCount}`;
+    return '拖给对应客人，或点交付';
+  }
+  useStock(kind,name){
+    if(!this.stock)return false;
+    if(kind!=='dough'&&PREP_SEQUENCE[kind])this.stock[kind]=PREP_SEQUENCE[kind].reduce((sum,n)=>sum+Math.max(0,Number(this.prepared[n])||0),0);
+    if(this.stock[kind]<=0)return false;
+    if(kind!=='dough'){
+      if(!name||!(this.prepared[name]>0))return false;
+      this.prepared[name]--;if(kind==='fillings'&&this.purchased[name]>0)this.purchased[name]--;
+    }
+    this.stock[kind]--;return true;
+  }
+  startPrep(id){const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='waiting'||o.food.id==='egg_pancake')return false;if(this.supplySystemEnabled&&this.stock.dough<=0){this.message='面团用完了，去后院收麦磨粉吧';return false;}o.state='knead';const stocked=this.useStock('dough');o.kneads=stocked?1:0;o.prepBonus=(o.prepBonus||0)+(stocked?2:0);this.selectedId=id;return true;}
+  pourBatter(id=this.selectedId){const o=this.orders.find(x=>x.id===id);if(!o||o.food.id!=='egg_pancake'||o.state!=='waiting')return false;if(this.supplySystemEnabled&&this.stock.dough<=0){this.message='面粉用完了，去后院准备新面糊吧';return false;}o.state='batter_spread';const stocked=this.useStock('dough');o.spreads=stocked?.5:0;o.prepBonus=(o.prepBonus||0)+(stocked?2:0);this.selectedId=id;return true;}
+  spreadBatter(id=this.selectedId,amount=1){const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='batter_spread'||!Number.isFinite(amount)||amount<=0)return false;o.spreads=Math.min(3,o.spreads+amount);if(o.spreads>=3-1e-8)o.state='egg_add';return true;}
+  spreadEgg(id=this.selectedId,amount=1){const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='egg_spread'||!Number.isFinite(amount)||amount<=0)return false;o.eggSpreads=Math.min(3,o.eggSpreads+amount);if(o.eggSpreads>=3-1e-8)o.state='scallion_add';return true;}
+  spreadSauce(id=this.selectedId,amount=1){const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='sauce_spread'||!Number.isFinite(amount)||amount<=0)return false;o.sauceSpreads=Math.min(3,(o.sauceSpreads||0)+amount);if(o.sauceSpreads>=3-1e-8){o.sauceBrushed=true;o.state='cut';}return true;}
+  nextIngredient(o){
+    if(!o)return null;
+    if(o.state==='egg_add')return '鸡蛋';
+    if(o.state==='scallion_add')return '香葱';
+    if(o.state==='sauce')return '酱香酱';
+    return o.state==='ingredient'?o.food.ingredients[o.ingredientIndex]||null:null;
+  }
+  knead(id=this.selectedId){const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='knead')return false;if(++o.kneads>=3)o.state='ingredient';return true;}
+  addIngredient(name,id=this.selectedId){
+    const o=this.orders.find(x=>x.id===id);if(!o)return false;
+    const supplyCost=SUPPLY_PRICES[name]&&this.purchased[name]>0?SUPPLY_PRICES[name]:0;
+    if(o.food.id==='egg_pancake'){
+      const expected=o.state==='egg_add'?'鸡蛋':o.state==='scallion_add'?'香葱':null;
+      if(!expected)return false;
+      if(name!==expected){this.message=`这一步要加${expected}哦～`;return false;}
+      if(this.supplySystemEnabled&&!(this.prepared[name]>0)){this.message=name==='鸡蛋'?'鸡蛋用完了，去小商店买一些':'香葱用完了，去后院种植切配';return false;}
+      const stocked=this.useStock(name==='香葱'?'greens':'fillings',name);o.prepBonus=(o.prepBonus||0)+(stocked?2:0);if(name==='鸡蛋'&&supplyCost)o.supplyCost=(o.supplyCost||0)+supplyCost;o.ingredientIndex++;if(o.state==='egg_add'){o.state='egg_spread';o.eggSpreads=0;}else{o.state='cooking';o.cook=0;}return true;
+    }
+    if(o.food.id==='sauce_cake'&&o.state==='sauce'){
+      if(name!=='酱香酱'){this.message='出锅后要刷酱香酱哦～';return false;}
+      if(this.supplySystemEnabled&&!(this.prepared[name]>0)){this.message='酱香酱用完了，去小商店买一瓶';return false;}
+      const stocked=this.useStock('fillings','酱香酱');o.prepBonus=(o.prepBonus||0)+(stocked?2:0);if(supplyCost)o.supplyCost=(o.supplyCost||0)+supplyCost;o.ingredientIndex=2;o.sauceSpreads=0;o.sauceBrushed=false;o.state='sauce_spread';return true;
+    }
+    if(o.state!=='ingredient')return false;
+    const expected=o.food.ingredients[o.ingredientIndex];
+    if(name!==expected){this.message=`这份要用${expected}哦～`;return false;}
+    const kind=['香葱','韭菜','荠菜'].includes(name)?'greens':name==='原味'?null:'fillings';
+    if(this.supplySystemEnabled&&kind&&!(this.prepared[name]>0)){this.message=kind==='greens'?`${name}用完了，去后院种植切配`:`${name}用完了，去小商店补货`;return false;}
+    const stocked=kind?this.useStock(kind,name):false;o.prepBonus=(o.prepBonus||0)+(stocked?2:0);o.ingredientIndex++;
+    if(kind==='fillings'&&supplyCost)o.supplyCost=(o.supplyCost||0)+supplyCost;
+    if(o.food.id==='sauce_cake'&&o.ingredientIndex>=1)o.state='shape';
+    else if(o.ingredientIndex>=o.food.ingredients.length)o.state='shape';
+    return true;
+  }
+  shape(id=this.selectedId){const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='shape')return false;if(++o.shapes>=o.food.shapeCount)o.state='station';return true;}
+  beginCook(station,id=this.selectedId){
+    const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='station'||station!==o.food.station)return false;
+    o.state='cooking';o.cook=0;return true;
+  }
+  setHeat(heat,id=this.selectedId){const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='cooking'||!['low','medium','high'].includes(heat))return false;o.heat=heat;return true;}
+  tick(seconds){
+    const step=Math.max(0,Math.min(seconds,1));
+    for(const o of this.orders){
+      if(!Number.isFinite(o.patience))o.patience=100;
+      // One order has several hand-made steps, so patience lasts roughly four minutes.
+      const drain=o.state==='ready'?.18:.34;
+      o.patience=Math.max(0,o.patience-step*drain);
+    }
+    for(const o of this.orders)if(o.state==='cooking'){
+      const speed={low:7,medium:12,high:18}[o.heat]*(1+.1*(this.upgrades[o.food.station]||0));
+      o.cook=Math.min(120,o.cook+step*speed);
+    }
+  }
+  flip(id=this.selectedId){const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='cooking'||!needsFlip(o.food)||o.flipped||o.cook<28)return false;o.flipped=true;o.flipAt=o.cook;return true;}
+  cookTarget(o){return (o.preference==='crispy'?98:o.preference==='soft'?72:84)+(COOK_OFFSETS[o.food.id]||0);}
+  finishCook(id=this.selectedId){
+    const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='cooking'||o.cook<55)return false;
+    const target=this.cookTarget(o);
+    let q=100-Math.abs(o.cook-target)*1.7;
+    if(needsFlip(o.food))q-=!o.flipped?25:Math.min(22,Math.abs(o.flipAt-45)*.7);
+    q+=Math.min(6,o.prepBonus||0);o.quality=Math.max(0,Math.min(100,Math.round(q)));o.state=o.food.id==='sauce_cake'?'sauce':o.food.cutCount?'cut':'ready';return true;
+  }
+  qualityText(o=this.selected){
+    if(!o||!Number.isFinite(o.quality))return '';
+    if(o.quality>=92)return '完美火候';
+    if(o.quality>=78)return '香喷喷';
+    if(o.quality>=60)return '火候尚可';
+    const target=this.cookTarget(o);
+    return o.cook<target?'稍微欠火':'有点过火';
+  }
+  qualityHearts(o=this.selected){
+    if(!o||!Number.isFinite(o.quality))return 0;
+    return o.quality>=92?3:o.quality>=70?2:1;
+  }
+  reputationInfo(){
+    const marks=[0,20,50,90,140],names=['街角新摊','邻里熟面孔','早餐小红摊','馍饼好手','街坊招牌'];
+    let level=1;for(let i=1;i<marks.length;i++)if(this.reputation>=marks[i])level=i+1;
+    const start=marks[level-1],next=marks[level]??marks[marks.length-1];
+    return{level,name:names[level-1],value:this.reputation,start,next,maxed:level===marks.length,progress:level===marks.length?1:(this.reputation-start)/(next-start)};
+  }
+  daySummary(){
+    const best=FOODS.reduce((a,f)=>(this.sales[f.id]||0)>(this.sales[a.id]||0)?f:a,FOODS[0]);
+    return{net:this.revenue-this.costs,tips:this.tips,average:this.visitors?Math.round(this.qualityTotal/this.visitors):0,perfects:this.perfects,repeatCustomers:this.repeatCustomers,best,bestCount:this.sales[best.id]||0};
+  }
+  cut(id=this.selectedId){const o=this.orders.find(x=>x.id===id);if(!o||o.state!=='cut')return false;if(++o.cuts>=o.food.cutCount)o.state='ready';return true;}
+  serve(id=this.selectedId){
+    const index=this.orders.findIndex(x=>x.id===id),o=this.orders[index];if(!o||o.state!=='ready')return false;
+    this.coins+=o.food.price;this.revenue+=o.food.price;
+    const wasRegular=(this.customerVisits[o.customer.name]||0)>0;if(wasRegular)this.repeatCustomers++;this.customerVisits[o.customer.name]=(this.customerVisits[o.customer.name]||0)+1;
+    this.reputation+=o.quality>=92?3:o.quality>=78?2:1;
+    this.qualityTotal+=o.quality;if(o.quality>=92)this.perfects++;this.sales[o.food.id]++;this.totalSales[o.food.id]++;this.visitors++;
+    const dishLine=(FOOD_REACTIONS[o.food.id]||['热乎乎的真好！','下次再来尝尝！'])[o.quality>=78?0:1];
+    const greeting=o.patience<25?'终于等到啦，':wasRegular&&o.familiarOrder&&o.quality>=78?'还是熟悉的好味道，':wasRegular?'这回换个口味，':'';
+    this.lastReaction=`${o.customer.name}：${greeting}${dishLine}♡`;
+    this.customerFavorites[o.customer.name]=o.food.id;
+    this.orders.splice(index,1);
+    if(this.visitors>=this.targetVisitors&&this.orders.length===0){this.phase='close';this.selectedId=null;}
+    else{if(this.visitors+this.orders.length<this.targetVisitors)this.addOrder();if(this.selectedId===id)this.selectedId=this.orderAt(o.slot)?.id||this.orders[0]?.id||null;}
+    return true;
+  }
+  closeDay(){if(this.phase!=='business')return false;this.phase='close';return true;}
+  upgrade(station){
+    if(this.phase!=='close'||!STATIONS.includes(station))return false;
+    const level=this.upgrades[station]||0,cost=80+level*80;if(level>=2||this.coins<cost)return false;
+    this.coins-=cost;this.upgrades[station]=level+1;return true;
+  }
+  nextDay(){if(this.phase!=='close')return false;const saved=this.serialize();delete saved.session;Object.assign(this,new Game({...saved,day:this.day+1},this.random));return true;}
+  serialize(){
+    const saved={day:this.day,coins:this.coins,upgrades:{...this.upgrades},totalSales:{...this.totalSales},customerVisits:{...this.customerVisits},customerFavorites:{...this.customerFavorites},reputation:this.reputation,pantry:{stock:{...this.stock},prepared:{...this.prepared},purchased:{...this.purchased},prepWork:{...this.prepWork},gardenCrop:this.gardenCrop,enabled:this.supplySystemEnabled}};
+    if(this.phase!=='welcome')saved.session={phase:this.phase,stock:{...this.stock},prepared:{...this.prepared},purchased:{...this.purchased},prepWork:{...this.prepWork},gardenCrop:this.gardenCrop,supplySystemEnabled:this.supplySystemEnabled,prepChoice:{...this.prepChoice},orders:this.orders.map(o=>{const copy={...o,foodId:o.food.id,customerName:o.customer.name};delete copy.food;delete copy.customer;delete copy.visualAt;delete copy.visualKind;delete copy.visualIngredient;return copy;}),selectedId:this.selectedId,nextId:this.nextId,visitors:this.visitors,targetVisitors:this.targetVisitors,revenue:this.revenue,costs:this.costs,tips:this.tips,qualityTotal:this.qualityTotal,perfects:this.perfects,repeatCustomers:this.repeatCustomers,sales:{...this.sales}};
+    if(this.farm)saved.pantry.farm=JSON.parse(JSON.stringify(this.farm));
+    return saved;
+  }
+}
+const api={Game,FOODS,STATIONS,INGREDIENTS,PREP_SEQUENCE,SUPPLY_PRICES,CUSTOMERS,byId,needsFlip};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;
+if(typeof window!=='undefined')window.MoBingEngine=api;
+
+</script>
+  <script>
+(function(){
+  const {Game,FOODS,STATIONS,INGREDIENTS,needsFlip}=typeof require==='function'?require('./engine'):window.MoBingEngine;
+  const W=960,H=540,C={wall:'#FFF0F5',cream:'#FFFDF8',pink:'#F49CBD',rose:'#E66D9D',deep:'#A64772',
+    ink:'#654659',muted:'#A78091',line:'#ECCBD8',wood:'#E9B7A4',wood2:'#D99284',mint:'#8FC5A2',gold:'#E8BC70'};
+  class UI{
+    constructor(canvas,storage){
+      this.canvas=canvas;this.ctx=canvas.getContext('2d');this.storage=storage;let saved={};
+      try{saved=storage.get()||{};}catch(_){}
+      this.game=new Game(saved);this.hits=[];this.pointer=null;this.overlay=null;this.time=0;this.last=Date.now();this.toast=null;this.resize();
+    }
+    resize(){
+      const info=typeof wx!=='undefined'?wx.getSystemInfoSync():null;
+      const width=info?info.windowWidth:(window.innerWidth||W),height=info?info.windowHeight:(window.innerHeight||H);
+      this.dpr=Math.min(3,info?info.pixelRatio:(window.devicePixelRatio||1));
+      this.canvas.width=Math.round(width*this.dpr);this.canvas.height=Math.round(height*this.dpr);
+      if(this.canvas.style){this.canvas.style.width=width+'px';this.canvas.style.height=height+'px';}
+      this.width=width;this.height=height;this.rotated=width<height;
+      this.scale=this.rotated?Math.min(height/W,width/H):Math.min(width/W,height/H);
+      this.offsetX=this.rotated?(width-H*this.scale)/2:(width-W*this.scale)/2;
+      this.offsetY=this.rotated?(height-W*this.scale)/2:(height-H*this.scale)/2;
+    }
+    point(x,y){return this.rotated?{x:(y-this.offsetY)/this.scale,y:(this.offsetX+H*this.scale-x)/this.scale}:{x:(x-this.offsetX)/this.scale,y:(y-this.offsetY)/this.scale};}
+    start(x,y){const p=this.point(x,y);this.pointer={start:p,current:p,moved:false};}
+    move(x,y){if(!this.pointer)return;const p=this.point(x,y);this.pointer.current=p;if(Math.hypot(p.x-this.pointer.start.x,p.y-this.pointer.start.y)>10)this.pointer.moved=true;}
+    boardAt(p){for(let i=0;i<3;i++){const x=24+i*312;if(p.x>=x&&p.x<=x+288&&p.y>=374&&p.y<=527)return i;}return-1;}
+    ingredientAt(p){if(p.y>=277&&p.y<=347&&p.x>=108&&p.x<674)return INGREDIENTS[Math.floor((p.x-108)/63)];return null;}
+    shapeGesture(o,start,end,pointer){
+      const motion=o.food.motions?.[o.shapes]||'horizontal',dx=end.x-start.x,dy=end.y-start.y;
+      if(motion==='tap')return !pointer.moved;
+      if(motion==='horizontal')return Math.abs(dx)>28&&Math.abs(dx)>Math.abs(dy)*1.2;
+      if(motion==='vertical')return Math.abs(dy)>25&&Math.abs(dy)>Math.abs(dx)*1.1;
+      if(motion==='diagonal')return Math.abs(dx)>22&&Math.abs(dy)>18;
+      if(motion==='circle')return (pointer.shapeTurns||0)>=2.4;
+      return false;
+    }
+    stationAt(p){for(let i=0;i<4;i++){const x=702+(i%2)*119,y=244+Math.floor(i/2)*62;if(p.x>=x&&p.x<=x+108&&p.y>=y&&p.y<=y+55)return STATIONS[i];}return null;}
+    end(x,y){
+      if(!this.pointer)return;const pointer=this.pointer,start=pointer.start,p=this.point(x,y),moved=pointer.moved;this.pointer=null;
+      const g=this.game;
+      if(g.phase==='business'&&!this.overlay){
+        const bi=this.boardAt(p),startBoard=this.boardAt(start);
+        const selected=startBoard>=0?g.orderAt(startBoard):g.selected;
+        if(moved&&start.x>=18&&start.x<=92&&start.y>=273&&start.y<=346&&bi>=0&&g.orderAt(bi)?.state==='waiting'){
+          g.startPrep(g.orderAt(bi).id);return;
+        }
+        if(moved&&this.ingredientAt(start)&&bi>=0&&g.orderAt(bi)?.state==='ingredient'){
+          if(!g.addIngredient(this.ingredientAt(start),g.orderAt(bi).id))this.toast={text:g.message,until:Date.now()+1900};return;
+        }
+        if(bi>=0&&g.orderAt(bi))g.select(g.orderAt(bi).id);
+        if(selected){
+          const selectedBoard=selected.slot;
+          if(moved&&selected.state==='ready'&&startBoard===selectedBoard&&p.y>=58&&p.y<=230&&Math.abs(p.x-(168+selectedBoard*312))<120){
+            const name=selected.customer.name;if(g.serve(selected.id)){this.toast={text:name+'接过早餐：谢谢，热乎乎的！',until:Date.now()+1800};this.save();}return;
+          }
+          if(moved&&selected.state==='station'&&startBoard===selectedBoard){const station=this.stationAt(p);if(station){g.beginCook(station,selected.id);return;}}
+          if(startBoard===selectedBoard&&bi===selectedBoard){
+            if(selected.state==='cooking'&&needsFlip(selected.food)&&!selected.flipped&&moved){
+              const cx=168+selectedBoard*312;
+              if(Math.abs(start.x-cx)<59&&start.y>=412&&start.y<=479&&p.y<start.y-29&&Math.abs(p.x-start.x)<68){
+                if(!g.flip(selected.id))this.toast={text:'底面再煎一会儿，就能翻面了',until:Date.now()+1400};
+                return;
+              }
+            }
+            if(selected.state==='knead'&&moved&&Math.abs(p.x-start.x)>28){g.knead(selected.id);return;}
+            if(selected.state==='shape'){
+              if(this.shapeGesture(selected,start,p,pointer))g.shape(selected.id);
+              else this.toast={text:'照着案板提示的方向操作哦',until:Date.now()+1400};
+              return;
+            }
+            if(selected.state==='cut'&&moved&&Math.hypot(p.x-start.x,p.y-start.y)>25){g.cut(selected.id);return;}
+          }
+        }
+        if(moved)return;
+      }else if(moved)return;
+      for(let i=this.hits.length-1;i>=0;i--){const h=this.hits[i];if(p.x>=h.x&&p.x<=h.x+h.w&&p.y>=h.y&&p.y<=h.y+h.h){h.fn();break;}}
+    }
+    hit(x,y,w,h,fn){this.hits.push({x,y,w,h,fn});}
+    save(){try{this.storage.set(this.game.serialize());}catch(_){}}
+    box(x,y,w,h,fill,r=0,stroke){
+      const c=this.ctx;c.beginPath();if(r){r=Math.min(r,w/2,h/2);c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r);c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r);c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);}else c.rect(x,y,w,h);
+      c.closePath();c.fillStyle=fill;c.fill();if(stroke){c.strokeStyle=stroke;c.lineWidth=1.5;c.stroke();}
+    }
+    oval(x,y,rx,ry,fill,stroke,lw=1){const c=this.ctx;c.beginPath();c.ellipse(x,y,rx,ry,0,0,Math.PI*2);c.fillStyle=fill;c.fill();if(stroke){c.strokeStyle=stroke;c.lineWidth=lw;c.stroke();}}
+    line(points,color,w=2){const c=this.ctx;c.beginPath();c.moveTo(...points[0]);for(const p of points.slice(1))c.lineTo(...p);c.strokeStyle=color;c.lineWidth=w;c.lineCap='round';c.stroke();}
+    text(v,x,y,s=16,color=C.ink,weight='normal',align='left'){const c=this.ctx;c.fillStyle=color;c.font=`${weight} ${s}px "Microsoft YaHei","PingFang SC",sans-serif`;c.textAlign=align;c.textBaseline='middle';c.fillText(String(v),x,y);}
+    button(label,x,y,w,h,fn,light=false){this.box(x,y+3,w,h,light?'#E3B7C7':'#B84E7A',13);this.box(x,y,w,h,light?C.cream:C.rose,13,light?C.line:null);this.text(label,x+w/2,y+h/2,15,light?C.deep:'#fff','bold','center');if(fn)this.hit(x,y,w,h+3,fn);}
+    drawHeader(){this.box(0,0,W,51,C.cream);this.box(0,0,W,6,C.pink);this.text('馍饼店 · 街角小摊',19,29,24,C.deep,'bold');this.text(`第 ${this.game.day} 天`,211,30,14,C.muted);this.box(744,10,90,32,C.wall,15);this.text('✦ '+this.game.coins,789,26,17,C.deep,'bold','center');}
+    drawCustomer(c,x,y,scale=1){
+      const d=this.ctx;d.save();d.translate(x,y);d.scale(scale,scale);
+      this.oval(0,36,34,37,c.color);this.oval(0,-4,27,28,'#FFE4D4');
+      this.oval(-10,-6,2.5,3,C.ink);this.oval(10,-6,2.5,3,C.ink);this.line([[-6,6],[0,9],[6,6]],C.deep,1.5);
+      this.oval(-10,-28,20,7,c.accent);this.oval(11,-27,15,7,c.accent);d.restore();
+    }
+    drawIngredient(name,x,y,s=.65){
+      const colors={原味:'#F3DBAE',香葱:'#78AA75',韭菜:'#5F9D66',荠菜:'#91B774',牛肉:'#A85E52',猪肉:'#D99183',芝麻糖:'#B68A54',酱香酱:'#914B47',鸡蛋:'#F6C64E'};
+      const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);this.oval(0,8,34,12,'#D69BAF');this.oval(0,0,34,14,C.cream,C.line,2);this.oval(0,-2,27,8,colors[name]);if(name==='鸡蛋')this.oval(0,-3,9,7,'#F3A928');c.restore();
+    }
+    drawFood(food,x,y,s=1,stage='ready'){
+      const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);const brown='#C58C5F',green='#67975F';
+      if(food.art==='round_bun'){this.oval(0,3,38,28,'#E9D4AC',brown,2);this.oval(-2,-3,36,28,'#FFF5DB',brown,2);}
+      if(food.art==='square_bun'){this.box(-34,-20,68,48,'#E9D4AC',10,brown);this.box(-34,-28,68,44,'#FFF5DB',10,brown);}
+      if(food.art==='flower_roll'){
+        for(const [px,py,r] of [[-25,4,22],[-9,-8,24],[12,-8,23],[28,5,20],[4,10,24]])this.oval(px,py,r,r*.65,'#F5DCB4',brown,1.5);
+        for(const p of [[-24,-1],[-8,-12],[8,2],[22,-5],[-2,13]])this.oval(p[0],p[1],3,2,green);
+        this.line([[-29,8],[-12,-2],[2,8],[17,-3],[31,8]],'#C89B6E',3);
+      }
+      if(food.art==='filled_pie'){
+        this.oval(0,0,43,25,'#E7BD76',brown,2);
+        if(food.ingredients[0]==='芝麻糖'){for(let j=0;j<24;j++)this.oval(Math.sin(j*7)*34,Math.cos(j*3)*18,2,1,'#FFF0C4');}
+        else for(const p of [[-24,-4],[-8,7],[11,-8],[26,5]])this.oval(p[0],p[1],2.5,1.8,food.ingredients[0]==='牛肉'?'#8E5546':food.ingredients[0]==='荠菜'?'#93A366':green);
+      }
+      if(food.art==='half_moon'){c.beginPath();c.moveTo(-44,9);c.quadraticCurveTo(0,-35,44,9);c.quadraticCurveTo(0,29,-44,9);c.fillStyle='#E2B979';c.fill();c.strokeStyle=brown;c.lineWidth=2;c.stroke();for(let i=-30;i<=30;i+=12)this.line([[i,7],[i+6,1]],'#A77B56',2);}
+      if(food.art==='dumpling'){c.beginPath();c.moveTo(-42,12);c.quadraticCurveTo(0,-34,42,12);c.quadraticCurveTo(0,31,-42,12);c.fillStyle='#E7C18A';c.fill();c.strokeStyle=brown;c.lineWidth=2;c.stroke();for(let i=-25;i<=25;i+=10)this.line([[i,-1],[i+5,-8]],'#B9875E',2);}
+      if(food.art==='potstick'){this.oval(0,3,48,19,'#D5A16D',brown,2);for(let i=-30;i<=30;i+=15)this.line([[i,-8],[i+5,1]],'#A87250',2);}
+      if(['large_pancake','sauce_pancake','egg_pancake'].includes(food.art)){
+        const fill=food.art==='sauce_pancake'?'#C57B59':food.art==='egg_pancake'?'#F2C858':'#DFB466';
+        this.oval(0,0,57,34,fill,brown,2);
+        if(food.art==='egg_pancake'){for(let j=0;j<5;j++){c.beginPath();c.ellipse(-3,0,12+j*8,5+j*5,0,j*.5,Math.PI*1.7+j*.5);c.strokeStyle=j%2?'#FFEAA2':'#ECAF47';c.lineWidth=4;c.stroke();}}
+        for(const p of [[-32,-5],[-11,11],[15,-10],[33,6]])this.oval(p[0],p[1],3,2,green);
+        if(stage==='cut')for(let i=0;i<food.cutCount;i++){const a=(i/food.cutCount)*Math.PI;this.line([[Math.cos(a)*-55,Math.sin(a)*-30],[Math.cos(a)*55,Math.sin(a)*30]],'#9D624C',2);}
+      }
+      c.restore();
+    }
+    drawStation(name,x,y,w=108,h=55,active=false){
+      this.box(x,y,w,h,active?'#FFF8FB':'#F9DCE6',12,active?C.rose:C.line);const cx=x+w/2;
+      if(name==='蒸笼'){this.box(cx-24,y+14,48,21,'#C99568',6);this.box(cx-27,y+10,54,9,'#E5B77E',5);}
+      else if(name==='平底锅'){this.oval(cx-8,y+22,27,10,'#8D8991');this.box(cx+16,y+20,25,7,'#A66D78',4);}
+      else if(name==='蒸煎锅'){this.oval(cx,y+23,28,11,'#858A9E');this.oval(cx,y+16,24,7,'#BFC0C9');}
+      else{this.box(cx-30,y+14,60,20,'#9D6B68',7);this.oval(cx,y+14,28,7,'#C79085');}
+      this.text(name,cx,y+45,12,C.deep,'bold','center');
+    }
+    drawWelcome(){
+      this.box(0,0,W,H,C.wall);this.drawHeader();this.box(45,83,510,374,C.cream,28,C.line);
+      this.box(69,105,462,72,C.rose,12);for(let i=0;i<12;i++)this.box(77+i*38,108,19,66,i%2?C.cream:C.pink,2);
+      this.box(97,201,405,218,'#FFE1ED',20);this.text('街角馍饼小摊',299,232,27,C.deep,'bold','center');
+      this.drawFood(FOODS[2],214,325,1.25);this.drawFood(FOODS[12],385,325,1.2);
+      this.text('三位街坊同时来，几份早餐一起做',753,145,25,C.deep,'bold','center');
+      this.text('揉面 · 加馅 · 塑形 · 掌火 · 切块',753,192,16,C.muted,'normal','center');
+      this.button('摆摊营业 ♡',612,243,282,69,()=>this.game.startDay());
+      this.button('看看 13 道招牌',642,342,222,52,()=>this.overlay='book',true);
+    }
+    drawBusiness(){
+      const g=this.game;this.box(0,0,W,H,C.wall);this.drawHeader();
+      this.box(0,51,W,177,'#FFE6EE');this.box(0,51,W,17,C.pink);
+      for(let i=0;i<20;i++)this.box(i*52,51,26,45,i%2?C.cream:'#F7B0CB');
+      this.button('菜谱',846,10,52,32,()=>this.overlay='book',true);this.button('收店',903,10,50,32,()=>{g.closeDay();this.save();},true);
+      g.orders.forEach((o,i)=>{
+        const x=167+o.slot*312,selected=o.id===g.selectedId;
+        this.box(x-116,76,232,58,selected?C.cream:'#FFF6F9',16,selected?C.rose:C.line);
+        this.text(o.customer.name,x-101,94,14,C.deep,'bold');this.text(g.request(o),x-101,116,o.food.name.length>6?13:14,C.ink,'bold');
+        this.drawCustomer(o.customer,x,178,.78);
+        if(['cooking','ready','cut'].includes(o.state))this.text(o.state==='cooking'?Math.round(o.cook)+'%':o.state==='cut'?'待切块':'做好啦',x+45,177,13,o.state==='ready'?C.mint:C.deep,'bold');
+        this.hit(x-120,70,240,158,()=>g.select(o.id));
+      });
+      // 摊位台面：小菜和锅具全部摆在同一张桌面上。
+      this.box(0,215,W,325,C.wood);this.box(0,215,W,18,C.wood2);this.box(0,351,W,11,'#D38B7D');
+      this.box(10,254,675,99,'rgba(255,253,248,.72)',18,C.line);
+      this.text('面团',54,266,12,C.deep,'bold','center');this.drawFood(FOODS[0],54,310,.57);
+      INGREDIENTS.forEach((name,i)=>{const x=139+i*63;this.drawIngredient(name,x,305,.62);this.text(name,x,337,10,C.deep,'bold','center');});
+      this.text('台面上的小菜',343,268,12,C.muted,'normal','center');
+      STATIONS.forEach((name,i)=>{const x=702+(i%2)*119,y=244+Math.floor(i/2)*62;this.drawStation(name,x,y,108,55,g.selected?.state==='station'&&g.selected.food.station===name);});
+      g.orders.forEach((o,i)=>this.drawBoard(o,o.slot));
+      if(this.pointer&&this.pointer.moved)this.drawDragGhost();
+      if(this.toast&&Date.now()<this.toast.until){this.box(345,190,270,42,C.cream,18,C.line);this.text(this.toast.text,480,211,15,C.deep,'bold','center');}
+    }
+    drawBoard(o,i){
+      const x=24+i*312,selected=o.id===this.game.selectedId;
+      this.box(x,378,288,149,'#BE8D74',20,'#865F50');
+      this.box(x,374,288,147,selected?'#FCE4BE':'#EED3AB',20,selected?'#BC7772':'#B88D6E');
+      for(let k=0;k<3;k++)this.line([[x+18,405+k*43],[x+58,407+k*43]],'#DFC098',1);
+      this.text(o.food.name,x+14,393,14,selected?C.deep:C.muted,'bold');
+      if(o.state==='waiting'){this.oval(x+144,452,61,35,'#F9EDE4','#DABBB1',2);this.text('拖面团来开做',x+144,452,14,C.muted,'bold','center');}
+      else{
+        if(o.state==='knead'||o.state==='ingredient')this.drawFood({art:'round_bun'},x+144,453,1.05);
+        else this.drawFood(o.food,x+144,453,1.05,o.state==='cut'?'ready':o.state);
+        if(o.state==='ingredient')this.text('等小菜',x+144,453,13,C.deep,'bold','center');
+        if(o.state==='cut'){
+          for(let j=0;j<o.cuts;j++){const a=j*Math.PI/3;this.line([[x+144-Math.cos(a)*52,453-Math.sin(a)*29],[x+144+Math.cos(a)*52,453+Math.sin(a)*29]],'#945C4A',2);}
+          this.box(x+224,423,43,8,'#B9BBC5',4);this.box(x+260,421,19,12,'#9B6574',4);
+        }
+      }
+      this.text(this.game.instruction(o),x+144,505,this.game.instruction(o).length>22?11:13,C.deep,'bold','center');
+      if(selected&&o.state==='cooking'){
+        const target=o.preference==='crispy'?98:o.preference==='soft'?72:84;
+        this.box(x+12,414,92,8,'#F2D5DC',4);this.box(x+12,414,92*o.cook/120,8,C.rose,4);
+        this.text('火候',x+12,433,11,C.muted);
+        [['low','小'],['medium','中'],['high','大']].forEach(([h,l],j)=>{const bx=x+13+j*31;this.box(bx,441,27,24,o.heat===h?C.rose:C.cream,7,C.line);this.text(l,bx+13.5,453,11,o.heat===h?'#fff':C.deep,'bold','center');this.hit(bx,441,27,24,()=>this.game.setHeat(h,o.id));});
+        if(needsFlip(o.food)&&!o.flipped)this.button('翻面',x+190,413,78,31,()=>this.game.flip(o.id),true);
+        this.button(o.cook<55?'再等等':'出锅',x+190,451,78,31,o.cook<55?null:()=>this.game.finishCook(o.id));
+        this.text('刚好约 '+target+'%',x+57,479,10,C.mint,'bold','center');
+      }
+      if(selected&&o.state==='ready')this.button('交给客人 ♡',x+180,474,98,37,()=>{const n=o.customer.name;if(this.game.serve(o.id)){this.toast={text:`${n}满意地接过早餐♡`,until:Date.now()+1500};this.save();}});
+    }
+    drawDragGhost(){
+      const p=this.pointer,s=p.start,c=p.current,b=this.boardAt(s),g=this.game;
+      this.ctx.save();this.ctx.globalAlpha=.7;
+      if(s.x>=18&&s.x<=92&&s.y>=273&&s.y<=346){if(g.supplySystemEnabled&&g.stock.dough<=0)this.text('先揉好面团',c.x,c.y-13,12,C.deep,'bold','center');else if(this.drawIngredientPortion)this.drawIngredientPortion('原味',c.x,c.y,1);else this.drawFood(FOODS[0],c.x,c.y,.7);}
+      else if(this.ingredientAt(s)){
+        const name=this.ingredientAt(s),available=name==='原味'||!g.supplySystemEnabled||g.prepared[name]>0;
+        if(available&&this.drawIngredientPortion)this.drawIngredientPortion(name,c.x,c.y,.9);
+        else if(!available)this.text('先备好'+name,c.x,c.y-13,12,C.deep,'bold','center');
+        else this.drawIngredient(name,c.x,c.y,.8);
+      }
+      else if(b>=0&&['station','ready'].includes(g.orderAt(b)?.state))this.drawFood(g.orderAt(b).food,c.x,c.y,.75);
+      this.ctx.restore();
+    }
+    drawClose(){
+      const s=this.game.daySummary(),rep=this.game.reputationInfo();
+      this.box(0,0,W,H,C.wall);this.drawHeader();this.text('今天的小摊收好啦！',480,72,27,C.deep,'bold','center');this.text(`${rep.name} · 口碑 ${rep.value}${rep.maxed?' · 已满级':` / ${rep.next}`}`,480,99,13,C.muted,'bold','center');this.box(360,112,240,6,C.line,3);this.box(360,112,240*rep.progress,6,C.pink,3);
+      this.box(52,128,346,310,C.cream,24,C.line);this.text('今日小账本',82,162,20,C.deep,'bold');
+      this.line([[79,178],[371,178]],C.line,2);
+      const rows=[['招待街坊',`${this.game.visitors} 位`],['回头熟客',`${s.repeatCustomers} 位`],['营业收入',`${this.game.revenue} 金币`],['备货支出',`-${this.game.costs} 金币`],['卖出份数',`${this.game.visitors} 份`],['平均品质',s.average?`${s.average} 分`:'还没有完成订单']];
+      rows.forEach((r,i)=>{const y=205+i*31;this.text(r[0],82,y,13,C.muted);this.text(r[1],365,y,14,i===3?C.mint:C.deep,'bold','right');});
+      this.box(76,386,298,38,'#FFF0D1',12,'#E8C78B');this.text('今日收支差额',94,405,14,C.deep,'bold');this.text(`${s.net} 金币`,354,405,19,C.gold,'bold','right');
+      this.box(422,128,486,310,C.cream,24,C.line);this.text('人气菜与锅具',451,162,20,C.deep,'bold');
+      this.box(448,181,434,77,'#FFF4E6',16,C.line);this.drawFood(s.best,490,219,.65);this.text(s.bestCount?`今日人气王 · ${s.best.name}`:'今日人气王 · 等待第一单',535,208,15,C.deep,'bold');this.text(s.bestCount?`卖出 ${s.bestCount} 份，明天也要备好哦`:'完成订单后会记录街坊口味',535,232,11,C.muted);
+      STATIONS.forEach((name,i)=>{const x=448+(i%2)*218,y=276+Math.floor(i/2)*72,level=this.game.upgrades[name]||0;this.box(x,y,202,58,C.wall,13,C.line);if(this.drawCookware)this.drawCookware(name,x+37,y+29,.32);this.text(`${name}  ${'★'.repeat(level)}${'☆'.repeat(2-level)}`,x+70,y+19,12,C.deep,'bold');this.text(level>=2?'加热 +20% · 已升满':`加热 +${level*10}% · ${80+level*80} 金币`,x+70,y+41,10,C.muted);this.hit(x,y,202,58,()=>{this.game.upgrade(name);this.save();});});
+      this.button('明天继续摆摊 ♡',350,467,260,52,()=>{this.game.nextDay();this.save();});
+      this.button('去后院备货',649,467,122,42,()=>this.overlay='yard',true);
+      this.button('去商店采购',782,467,122,42,()=>{this.shopReturn=null;this.overlay='shop';},true);
+    }
+    drawBook(){
+      this.box(0,0,W,H,'rgba(82,48,68,.45)');this.box(60,29,840,482,C.cream,24,C.line);
+      this.text('馍饼店 · 食物图鉴',86,62,23,C.deep,'bold');this.button('返回',810,45,66,36,()=>this.overlay=null,true);
+      const notes={big_bun:['圆鼓鼓的白面顶','底边微微收口'],small_bun:['两只方形小枕头','棱角蒸软变圆'],twist:['面带交叠成花','褶缝里露出葱花'],chive_cake:['薄皮包着长韭菜','收口严实，不露韭菜'],shepherd_cake:['薄皮包好荠菜馅','完整柔软的圆饼'],beef_cake:['厚实焦香的饼皮','牛肉馅包在里面'],chive_box:['半月形鼓起','边缘一圈手捏花边'],scallion_cake:['圆圆的多层薄饼','葱花与酥脆烙痕'],sesame_cake:['密密的白芝麻','糖馅封在完整饼皮里'],sauce_cake:['大圆饼刷上红酱','芝麻葱花再切块'],pork_bun:['饺子形鼓肚','褶子与金黄焦底'],potstick_mo:['三条长软枕','一面烙得焦香'],egg_pancake:['面糊摊成大圆饼','鸡蛋抹匀撒葱花']};
+      const selected=FOODS.find(f=>f.id===this.bookFood)||FOODS[0];
+      FOODS.forEach((f,i)=>{const col=i%3,row=Math.floor(i/3),x=79+col*190,y=91+row*78,active=selected.id===f.id;this.box(x,y,180,69,active?'#FFE2E8':'#FFF8EE',13,active?'#D689A1':'#EAD7C8');this.drawFood(f,x+44,y+34,.51,'ready');this.text(f.name,x+84,y+26,f.name.length>6?10:13,C.deep,'bold');this.text(notes[f.id][0],x+84,y+47,9,C.muted);this.hit(x,y,180,69,()=>this.bookFood=f.id);});
+      this.box(661,91,222,381,'#FFF1ED',18,'#E5B7BE');
+      this.text(selected.name,772,120,20,C.deep,'bold','center');
+      this.text(notes[selected.id][0],772,146,12,C.muted,'normal','center');
+      this.text(notes[selected.id][1],772,165,12,C.muted,'normal','center');
+      this.oval(772,264,94,39,'#F0D9CB');this.drawFood(selected,772,236,1.43,'ready');
+      this.text('出锅的样子',772,312,12,C.deep,'bold','center');
+      this.text(`售价 ${selected.price} 金币／份`,772,330,12,C.deep,'bold','center');
+      this.box(681,341,181,105,'#FFF9F1',13,'#EDD4C7');
+      this.drawFood(selected,724,388,.69,'raw');this.text('生胚',724,428,11,C.muted,'bold','center');
+      if(selected.cutCount){this.drawFood(selected,816,388,.69,'cut');this.text('切块',816,428,11,C.muted,'bold','center');}
+      else {this.drawFood(selected,816,388,.69,'ready');this.text('熟制',816,428,11,C.muted,'bold','center');}
+    }
+    draw(){
+      const c=this.ctx;c.setTransform(this.dpr,0,0,this.dpr,0,0);c.fillStyle='#EFCBD8';c.fillRect(0,0,this.width,this.height);c.save();
+      if(this.rotated){c.translate(this.offsetX+H*this.scale,this.offsetY);c.rotate(Math.PI/2);}else c.translate(this.offsetX,this.offsetY);c.scale(this.scale,this.scale);this.hits=[];
+      if(this.game.phase==='welcome')this.drawWelcome();else if(this.game.phase==='prep')this.drawPrep();else if(this.game.phase==='close')this.drawClose();else this.drawBusiness();
+      if(this.overlay){this.hits=[];if(this.overlay==='book')this.drawBook();else if(this.overlay==='yard')this.drawPrep();else if(this.overlay==='shop')this.drawShop();}c.restore();
+    }
+    frame(){const now=Date.now(),dt=Math.min(.1,(now-this.last)/1000);if(!this.overlay&&!this.paused)this.game.tick(dt);if(!this.paused)this.time+=dt;this.last=now;this.draw();}
+  }
+  if(typeof module!=='undefined'&&module.exports)module.exports={UI};
+  if(typeof window!=='undefined')window.MoBingUI=UI;
+})();
+
+</script>
+  <script>
+(function(){
+  const UI=typeof module!=='undefined'&&module.exports?require('./ui').UI:window.MoBingUI;
+  const {FOODS,INGREDIENTS,STATIONS,SUPPLY_PRICES}=typeof module!=='undefined'&&module.exports?require('./engine'):window.MoBingEngine;
+  const P=UI.prototype,ink='#765345',cream='#FFF7E5',pink='#F2B1BB';
+  P.drawStreet=function(){
+    const progress=this.game.phase==='close'?1:this.game.phase==='business'?Math.min(1,this.game.visitors/Math.max(1,this.game.targetVisitors)):0;
+    const sky=progress>.72?'#F5D8C7':progress>.38?'#E8E5CE':'#DCEBD9';
+    this.box(0,0,960,540,'#FBEDDD');
+    this.box(0,40,960,190,sky);
+    const sunX=82+progress*790,sunY=93-Math.sin(progress*Math.PI)*32;
+    this.oval(sunX,sunY,24,24,progress>.72?'#F3A779':'#F6CF77','#DDA66D',2);
+    for(const [cx,cy] of [[250-progress*42,78],[696-progress*68,111]]){
+      this.oval(cx,cy,31,10,'rgba(255,255,244,.72)');this.oval(cx-20,cy+2,20,8,'rgba(255,255,244,.72)');this.oval(cx+23,cy+2,23,8,'rgba(255,255,244,.72)');
+    }
+    for(let i=0;i<7;i++){
+      const x=i*153-25;this.box(x,73,120,138,i%2?'#F1D5CC':'#F8E7C8',7,'#DBBFA6');
+      this.box(x-7,67,134,13,i%2?'#D5AAA7':'#D9C4A3',6);
+      for(let k=0;k<2;k++){this.box(x+17+k*51,93,33,47,'#FDF7DF',8,'#DECAB0');this.line([[x+33+k*51,94],[x+33+k*51,138]],'#DDC9AF',2);}
+    }
+    this.box(0,195,960,50,'#E6D7C7');this.line([[0,214],[960,214]],'#D4C1AC',2);
+    for(const x of [19,938]){
+      this.box(x-4,114,8,111,'#B59C7D',4);
+      for(let j=0;j<5;j++)this.oval(x+Math.sin(j*2)*24,106+Math.cos(j*2)*24,27,29,j%2?'#B5CE98':'#C9DDAA');
+      this.box(x-19,223,38,25,'#DEA49D',6,ink);
+    }
+    for(let i=0;i<16;i++){
+      this.box(i*60,-5,60,44,i%2?cream:pink);
+      this.oval(i*60+30,37,30,15,i%2?cream:pink,ink,1.5);
+    }
+  };
+  P.drawHeader=function(){
+    const rep=this.game.reputationInfo();
+    this.box(16,12,269,35,cream,17,ink);this.oval(36,29,12,12,'#F8CC6A',ink,1.5);
+    this.text('馍',36,29,12,ink,'bold','center');this.text(this.game.coins,56,30,17,ink,'bold');
+    this.text('第 '+this.game.day+' 天',119,30,12,ink);this.line([[174,18],[174,40]],'#DFC8B4',1);
+    this.text(`Lv.${rep.level} ${rep.name}`,185,30,11,'#A66F65','bold');
+  };
+  P.drawCustomer=function(customer,x,y,scale=1,mood='waiting'){
+    const c=this.ctx;c.save();c.translate(x,y);c.scale(scale,scale);
+    const elderly=/奶奶|老人/.test(customer.name),rider=/骑手/.test(customer.name),student=/学生|小禾|孩子/.test(customer.name);
+    const vendor=/摊主|老板|师傅/.test(customer.name),tourist=/游客|摄影/.test(customer.name),office=/上班族|护士/.test(customer.name),parent=/家长/.test(customer.name),nurse=/护士/.test(customer.name),aunt=/阿姨/.test(customer.name);
+    const hair=elderly?'#B7ACA0':student?'#765448':'#624C43';
+    this.oval(0,48,46,37,customer.color,ink,2.5);
+    this.box(-8,17,16,15,'#F8D6B7',5,ink);
+    this.oval(0,-4,45,43,hair,ink,2.5);
+    if(elderly)this.oval(-30,-37,19,17,hair,ink,2);
+    if(student)this.oval(23,-42,20,16,hair,ink,2);
+    if(parent){this.oval(-39,5,13,24,hair,ink,2);this.oval(39,5,13,24,hair,ink,2);}
+    this.oval(0,3,41,35,'#FFE1C7',ink,2.5);
+    for(let k=0;k<4;k++)this.oval(-27+k*17,-23+Math.sin(k)*4,15,12,hair);
+    if(rider){this.oval(0,-25,47,28,'#F5CA60',ink,2.5);this.box(-46,-22,92,14,'#F5CA60',8,ink);this.oval(0,-30,12,10,cream,ink);this.text('馍',0,-30,12,ink,'bold','center');}
+    if(vendor){this.box(-40,-38,80,20,cream,8,ink);this.oval(-20,-40,17,11,cream,ink,2);this.oval(4,-43,21,13,cream,ink,2);this.oval(26,-38,14,10,cream,ink,2);}
+    if(tourist){this.oval(0,-31,39,24,'#DABC8B',ink,2);this.oval(0,-20,54,9,'#E5CDA3',ink,2);this.line([[-33,-25],[33,-25]],'#C68F88',5);}
+    if(nurse){this.box(-25,-39,50,18,cream,7,ink);this.box(-5,-43,10,15,'#F2A3AA',2);this.box(-10,-38,20,5,'#F2A3AA',2);}
+    if(aunt){this.oval(25,-39,18,17,hair,ink,2);this.oval(29,-45,6,5,'#E7A0A8');}
+    const blink=(this.time+customer.name.length*.63)%4.7<.14;
+    if(blink||mood==='happy'){this.line([[-20,6],[-15,3],[-10,6]],ink,2);this.line([[10,6],[15,3],[20,6]],ink,2);}
+    else{this.oval(-15,5,3,4,ink);this.oval(15,5,3,4,ink);}
+    this.oval(-27,15,8,4,'#F3B0A2');this.oval(27,15,8,4,'#F3B0A2');
+    if(elderly){this.oval(-16,5,13,12,'rgba(255,255,255,.1)',ink,2);this.oval(16,5,13,12,'rgba(255,255,255,.1)',ink,2);this.line([[-3,4],[3,4]],ink,2);}
+    if(mood==='impatient'){
+      this.line([[-22,-2],[-10,1]],ink,2);this.line([[10,1],[22,-2]],ink,2);
+      c.beginPath();c.arc(0,23,6,Math.PI,Math.PI*2);c.strokeStyle=ink;c.lineWidth=2;c.stroke();
+    }else this.line([[-5,17],[0,21],[5,17]],ink,2);
+    this.line([[-15,36],[0,47],[15,36]],cream,4);
+    if(vendor){this.box(-25,43,50,26,'#EFD4B1',5,ink);this.box(-12,50,24,13,cream,3);}
+    if(office){this.line([[0,41],[-5,57],[0,64],[5,57],[0,41]],'#9A6F7C',3);this.box(18,43,14,9,cream,2);}
+    if(tourist){this.line([[-20,38],[0,58],[20,38]],ink,2);this.box(-14,51,28,17,'#988882',4,ink);this.oval(0,59,5,5,cream,ink);if(/摄影/.test(customer.name))this.oval(19,48,8,8,'#B8A7D8',ink,1);}
+    if(student){this.line([[-33,36],[-25,62]],'#916E61',5);this.line([[33,36],[25,62]],'#916E61',5);}
+    if(customer.name==='周师傅'){this.line([[-9,17],[-2,14],[0,17],[2,14],[9,17]],ink,3);}
+    if(parent){this.box(29,-15,9,5,'#E7A3A8',2);this.box(25,-14,8,4,'#E7A3A8',2);}
+    this.oval(-29,66,13,9,'#FFE1C7',ink,2);this.oval(29,66,13,9,'#FFE1C7',ink,2);
+    c.restore();
+  };
+  P.drawIngredientBits=function(name,x,y,s=1,spread=1){
+    const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);
+    const pos=i=>[Math.sin(i*8.1)*24*spread,Math.cos(i*4.3)*7*spread];
+    if(name==='香葱'||name==='大葱花'){
+      const large=name==='大葱花';
+      for(let i=0;i<(large?10:15);i++){const [px,py]=pos(i);this.oval(px,py,large?5.2:3.5,large?3.7:2.4,large?(i%3?'#8EBB68':'#D6E6AC'):'#4D8A4E',large?'#668E50':'#3E7041',1);this.oval(px,py,large?2.3:1.25,large?1.5:.8,large?'#F1EDC3':'#BFD78D');}
+    }else if(name==='韭菜'){
+      for(let i=0;i<13;i++){const [px,py]=pos(i);this.line([[px-5,py+2],[px+5,py-3]],i%3?'#477C49':'#72A35E',3);}
+    }else if(name==='荠菜'){
+      for(let i=0;i<11;i++){const [px,py]=pos(i);c.save();c.translate(px,py);c.rotate(Math.sin(i*2));this.oval(-3,0,5,3,'#8FA765','#668650',1);this.oval(3,0,5,3,'#A6B976','#668650',1);this.line([[0,-4],[0,4]],'#668650',1);c.restore();}
+    }else if(name==='牛肉'){
+      for(let i=0;i<19;i++){const [px,py]=pos(i);c.save();c.translate(px,py);c.rotate(i*.7);this.oval(0,0,4.4,2.2,i%3?'#AA6D59':'#935948','#804E40',.6);this.line([[-2,-.4],[1,.5]],i%4?'#C68A72':'#EBC4A4',.8);c.restore();}
+    }else if(name==='猪肉'){
+      for(let i=0;i<17;i++){const [px,py]=pos(i);this.oval(px,py,4,2.6,i%3?'#E7A293':'#F5C7B4');if(i%4===0)this.oval(px+1,py,1.4,1,'#FFF0D7');}
+    }else if(name==='芝麻糖'){
+      this.oval(0,1,25*spread,7*spread,'#C58A49');
+      for(let i=0;i<25;i++){const [px,py]=pos(i);this.oval(px,py,1.8,1,i%3?'#FFF0C4':'#60483C');}
+      this.line([[-14,-2],[0,2],[13,-2]],'#E2A95A',2);
+    }else if(name==='酱香酱'){
+      this.oval(0,0,27*spread,9*spread,'#8E4E36','#713E31',1);
+      this.line([[-17,-3],[-5,1],[7,-2],[18,1]],'#C47A51',3);this.oval(-8,-3,6,1.5,'#E0A06D');
+    }else if(name==='鸡蛋'){
+      this.oval(0,0,25*spread,10*spread,'rgba(255,248,207,.82)');this.oval(0,0,9,7,'#EEB63E','#D5942C',1);
+    }else{
+      this.oval(0,-1,23*spread,9*spread,'#F0D9A7');for(let i=0;i<10;i++){const [px,py]=pos(i);this.oval(px*.75,py*.75,2,1,cream);}
+    }
+    c.restore();
+  };
+  P.drawIngredient=function(name,x,y,s=.65,stocked=true){
+    const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);
+    const shell=['韭菜','荠菜','香葱','大葱花'].includes(name)?'#C5D7BB':name==='牛肉'||name==='猪肉'?'#EDBFBD':name==='鸡蛋'?'#E8C58D':'#CFDADF';
+    this.oval(2,24,33,6,'rgba(121,84,61,.13)');
+    this.oval(0,10,33,17,shell,ink,1.8);this.oval(0,0,35,14,'#FFFAED',ink,1.8);
+    this.oval(0,1,30,10,'#F1E4CC','#D3BAA2',.8);
+    this.line([[-26,10],[-21,17],[-14,20]],'#FFF4E2',2);
+    for(const px of [-7,0,7])this.oval(px,22,1.6,1.3,'#FFF4E6');
+    if(!stocked){this.text('空',0,1,12,'#B39B85','normal','center');}
+    else if(name==='鸡蛋'){
+      for(const px of [-16,0,16]){this.oval(px,-3+Math.abs(px)*.12,10,13,'#F9D8A9','#BE9271',1.5);this.line([[px-3,-5],[px+2,-8]],'#FFF0D4',1);}
+    }else this.drawIngredientBits(name,0,-1,1,1);
+    c.restore();
+  };
+  P.drawIngredientPortion=function(name,x,y,s=1){
+    const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);
+    this.oval(0,17,20,4,'rgba(121,84,61,.12)');
+    if(name==='鸡蛋'){
+      c.rotate(-.22);this.oval(0,0,11,15,'#F7D5A9','#AD8166',1.5);
+      this.oval(-4,-6,3,5,'#FFF0D5');
+    }else if(name==='酱香酱'){
+      c.rotate(.4);this.box(-4,-35,8,29,'#B88262',4,ink);this.box(-8,-9,16,9,'#D8C8B0',2,ink);
+      this.box(-9,0,18,16,'#BB7046',3,'#89533B');for(let i=-6;i<=6;i+=3)this.line([[i,2],[i,14]],'#E9B17C',1);
+      this.line([[-8,13],[0,16],[8,13]],'#A75335',3);
+    }else if(name==='原味'){
+      this.oval(0,0,23,14,'#F9E9CA','#C3A17D',1.4);this.line([[-13,-4],[-3,-9],[9,-7]],'#FFF8E4',2);
+    }else{
+      this.line([[4,-1],[25,-23]],'#AF8768',6);this.line([[12,-10],[25,-23]],'#E4BC96',3);
+      this.oval(0,0,22,11,'#D6BE9C',ink,1.3);this.oval(0,-2,19,8,'#F7E9D1');this.drawIngredientBits(name,0,-3,.64,.8);
+    }
+    c.restore();
+  };
+  P.drawCookware=function(name,x,y,s=1){
+    const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);
+    if(name==='蒸笼'){
+      this.box(-48,-5,96,29,'#D7A866',8,ink);this.oval(0,-6,48,17,'#F0CE8A',ink,2);
+      c.save();c.beginPath();c.ellipse(0,-6,44,13,0,0,Math.PI*2);c.clip();
+      for(let j=-5;j<=5;j++){this.line([[j*10,-20],[j*10,8]],'#C49A61',1);this.line([[-45,j*5-6],[45,j*5-6]],'#E5BB7D',1);}c.restore();
+      for(let j=-3;j<=3;j++)this.line([[j*12,6],[j*12,20]],'#BE9159',1);
+      this.line([[-43,3],[43,3]],'#B9804E',3);
+      this.line([[-43,18],[43,18]],'#EFCB87',2);
+      this.oval(34,-28,31,9,'#E5BD78',ink,2);this.oval(34,-31,5,4,'#B77F4F',ink,1);
+      for(let j=-2;j<=2;j++)this.line([[17+j*5,-31],[38+j*5,-24]],'#D0A265',1);
+    }else if(name==='平底锅'){
+      this.oval(-8,0,43,18,'#4F4B4A',ink,2);this.oval(-8,-3,36,13,'#70615B','#3D3938',2);
+      this.line([[29,-1],[67,-16]],'#6A5550',11);this.line([[42,-6],[67,-16]],'#DEA3A5',8);
+      this.line([[46,-9],[62,-15]],'#F3C6C1',1.8);this.oval(35,-4,2,2,'#D9C8A9');
+      c.beginPath();c.ellipse(-8,-3,38,14,0,Math.PI,Math.PI*1.75);c.strokeStyle='#AD9990';c.lineWidth=2;c.stroke();
+      this.oval(-8,9,25,4,'#ECA0AB');
+    }else if(name==='蒸煎锅'){
+      this.box(-45,-10,90,31,'#D88988',10,ink);this.oval(0,-9,45,16,'#5D5651',ink,2);
+      this.line([[-34,11],[-18,17],[20,17]],'#ECB5AC',2);this.oval(0,15,4,2,'#F7DFCC');
+      this.oval(0,-12,38,13,'rgba(220,238,226,.62)','#806C64',2);
+      this.oval(0,-25,8,5,'#B97872',ink,1.5);this.line([[-55,0],[-43,0]],ink,7);this.line([[43,0],[55,0]],ink,7);
+      this.oval(-13,-14,4,2,'#FFFFFF');this.oval(12,-10,2.5,2.5,'#FFFFFF');
+    }else{
+      this.box(-51,-12,102,27,'#6D5A52',7,ink);this.box(-45,-8,90,18,'#89746A',5,'#4F423E');
+      this.line([[-42,-5],[41,-5]],'#AB9481',1.2);this.box(-46,13,92,9,'#DEA4A7',3,ink);
+      this.oval(-30,17,3,3,'#F9DFAE');this.oval(30,17,3,3,'#F9DFAE');
+      this.line([[-39,16],[-34,25]],ink,6);this.line([[39,16],[34,25]],ink,6);
+      this.line([[28,-17],[61,-30]],'#8D6A59',7);this.box(17,-22,26,11,'#DAD5C8',2,ink);
+      this.line([[-34,-3],[34,-3]],'#A88D7F',2);
+    }
+    c.restore();
+  };
+  P.drawServingDish=function(food,x,y,s=1){
+    const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);
+    if(food.station==='蒸笼'){
+      this.oval(0,13,67,30,'#C89461','#A67C58',1.8);this.oval(0,6,69,30,'#E9BF85','#B28B63',1.8);
+      this.oval(0,5,62,24,'#FFF5DF','#D6B38C',1);
+      for(let j=-4;j<=4;j++){this.line([[j*13,27],[j*13+4,34-Math.abs(j)]],'#BD8A5F',1);}
+      for(const [xx,yy] of [[-47,0],[39,-10],[24,22]])this.line([[xx-4,yy],[xx,yy+2],[xx+4,yy]],'#E3CBB0',1);
+    }else if(['half_moon','dumpling','potstick'].includes(food.art)){
+      this.box(-70,-23,140,66,'#E4B7AF',16,'#B18A78');this.box(-66,-27,132,63,'#FFF4DE',14,'#CBA491');
+      this.box(-59,-21,118,50,'#F4E1BF',10);this.line([[-53,23],[-21,25],[11,24]],'#E4CDAA',1);
+      for(const xx of [-52,49])for(let j=0;j<3;j++)this.oval(xx,-10+j*12,2,2,'#EDC0BF');
+    }else{
+      this.oval(0,10,74,38,'#DAB4A1','#B89580',1.5);this.oval(0,5,74,38,'#FFF7E6','#C69A84',2);this.oval(0,5,65,30,'#F8EBCE','#E6CEAF',1);
+      for(let j=0;j<7;j++){const a=.18+j*.44;this.oval(Math.cos(a)*69,5+Math.sin(a)*33,2,1.5,'#E7B3B7');}
+    }
+    c.restore();
+  };
+  P.drawStation=function(name,x,y,w=108,h=55,active=false){
+    const cx=x+w/2;
+    if(active)this.oval(cx,y+29,53,27,'#FFF1BD','#CD947D',2);
+    this.drawCookware(name,cx,y+24,.62);
+    const level=this.game.upgrades?.[name]||0;for(let j=0;j<level;j++)this.text('★',x+9+j*12,y+9,10,'#E5A75B','bold','center');
+    this.text(name,cx,y+55,10,ink,'bold','center');
+    const orders=this.game.orders.filter(o=>o.state==='cooking'&&o.food.station===name);
+    if(orders.length){
+      for(let j=0;j<orders.length;j++)this.drawFood(orders[j].food,cx-19+j*19,y+16,.28);
+      for(let j=0;j<3;j++){const rise=(this.time*15+j*12)%35;this.ctx.save();this.ctx.globalAlpha=1-rise/40;this.line([[cx-18+j*18,y-rise],[cx-22+j*18,y-rise-5],[cx-17+j*18,y-rise-10]],cream,3);this.ctx.restore();}
+    }
+  };
+  P.drawWelcome=function(){
+    this.drawStreet();this.drawHeader();
+    this.box(0,326,960,214,'#DFB695');this.box(0,326,960,14,'#A77A64');
+    this.drawCustomer({name:'陈奶奶',color:'#CFBED7'},166,254,1.05);
+    this.drawCustomer({name:'学生',color:'#ADC7CD'},796,254,1.05);
+    this.box(282,77,396,216,cream,30,ink);
+    this.drawFood(FOODS[1],480,116,.5);this.oval(474,115,1.5,2,ink);this.oval(486,115,1.5,2,ink);this.line([[478,121],[482,123],[485,120]],ink,1);
+    this.text('馍 饼 店',480,180,48,ink,'bold','center');this.text('揉一团面，等一笼香。',480,237,18,'#A27969','normal','center');
+    for(let i=0;i<5;i++){this.oval(110+i*184,389,68,32,cream,ink,2);this.drawFood(FOODS[[0,2,7,12,10][i]],110+i*184,383,.85);}
+    this.button('先备货，再开摊',350,449,260,54,()=>this.game.beginPrep());
+    this.button('翻翻菜单',758,463,128,37,()=>this.overlay='book',true);
+  };
+  P.drawWholeCrop=function(name,x,y,s=1,stage=2,planted=true){
+    const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);
+    if(planted){this.oval(0,25,42,9,'#A97B5D');this.line([[-36,24],[36,24]],'#795B48',2);}
+    if(stage===0){for(const px of [-16,0,17])this.oval(px,19,3,2,'#D8B77C');c.restore();return;}
+    const height=stage===1?20:53;
+    if(name==='韭菜'){
+      for(let i=0;i<9;i++){const px=-21+i*5,tip=px+Math.sin(i*2)*16,top=19-height-(i%3)*4;
+        c.beginPath();c.moveTo(px-2,20);c.quadraticCurveTo(px-6,-10,tip,top);c.quadraticCurveTo(px+2,-8,px+2,20);c.closePath();c.fillStyle=i%2?'#679653':'#4D8049';c.fill();
+        this.line([[px,16],[px-2,-2]],'#A1BC76',1);
+      }
+    }else if(name==='荠菜'){
+      for(let i=0;i<7;i++){const a=-2.7+i*.45,px=Math.cos(a)*31,py=16+Math.sin(a)*39;
+        c.save();c.translate(px,py);c.rotate(a+Math.PI/2);
+        c.beginPath();c.moveTo(0,15);c.lineTo(-7,9);c.lineTo(-4,5);c.lineTo(-10,0);c.lineTo(-5,-4);c.quadraticCurveTo(-8,-12,0,-17);c.quadraticCurveTo(8,-12,5,-4);c.lineTo(10,0);c.lineTo(4,5);c.lineTo(7,9);c.closePath();c.fillStyle=i%2?'#94B16D':'#ABC17F';c.fill();c.strokeStyle='#6E8D55';c.lineWidth=1;c.stroke();this.line([[0,12],[0,-11]],'#D2DAA0',1);c.restore();
+        this.line([[0,18],[px,py+8]],'#7C9C5D',1.6);
+      }
+    }else{
+      const large=name==='大葱花';
+      for(let i=0;i<(large?4:6);i++){const px=-22+i*(large?14:9),tip=px+Math.sin(i*2)*8;
+        c.beginPath();c.moveTo(px,18);c.quadraticCurveTo(px+4,-6,tip,-height+12-i%2*8);c.strokeStyle=large?'#719951':'#528B56';c.lineWidth=large?8:4;c.lineCap='round';c.stroke();
+        this.line([[px,13],[px+2,large?-6:4]],'#EDF0CD',large?7:3.5);
+        this.line([[px-1,12],[px+1,-2]],'#CAD8A1',large?2:1);
+        this.oval(px,18,large?4:2.5,4,'#F1EDCD');
+        if(!planted)for(let j=-1;j<=1;j++)this.line([[px,21],[px+j*3,26+Math.abs(j)]],'#BEA780',.8);
+      }
+    }
+    c.restore();
+  };
+  P.drawShopItem=function(name,x,y,s=1){
+    const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);
+    if(name==='鸡蛋')for(const px of [-13,4,19])this.oval(px,0,9,12,'#F6DFC0','#B89475',1.5);
+    else if(name==='酱香酱'){this.box(-15,-23,30,43,'#A95B42',6,ink);this.box(-10,-29,20,8,'#E5B58B',3,ink);this.box(-12,-3,24,14,cream,3);this.text('酱',0,4,11,ink,'bold','center');}
+    else if(name==='芝麻糖'){this.box(-25,-17,50,35,'#DAB87E',7,ink);this.oval(0,-5,19,7,'#BD824C');for(let j=0;j<13;j++)this.oval(Math.sin(j*8)*16,-5+Math.cos(j*3)*5,1.7,1,'#FFF1CE');}
+    else {this.box(-27,-15,54,31,name==='牛肉'?'#995B4F':'#D99989',8,ink);this.line([[-20,-3],[-7,-10],[9,-5],[20,-10]],name==='牛肉'?'#C08370':'#F3C7AC',3);this.box(-31,14,62,5,'#E1C5A5',2);}
+    c.restore();
+  };
+  P.drawPrep=function(){
+    const g=this.game,limits={dough:6,greens:5,fillings:12},yard=this.overlay==='yard';
+    this.drawStreet();this.drawHeader();
+    this.box(0,226,960,314,'#EDCBA7');this.box(0,226,960,13,'#B68A71',3,ink);
+    this.text(yard?'趁着空当，回后院补一点货':'清晨的后院，从收成开始准备今天的早餐',480,78,25,ink,'bold','center');
+    this.text('麦穗变面粉、青菜长成整棵，肉蛋和调味料去街角小店买',480,109,13,'#9E7868','normal','center');
+    const cards=[{key:'dough',x:74,title:'麦田到面团',color:'#F8E8C8'},{key:'greens',x:344,title:'小菜圃',color:'#DCE9C9'},{key:'fillings',x:614,title:'街角小商店',color:'#F2D2C2'}];
+    for(const card of cards){
+      const value=g.stock[card.key],max=limits[card.key],done=value>=max;
+      this.box(card.x,145,232,272,card.color,22,done?'#8FA879':ink);
+      this.text(card.title,card.x+116,178,18,ink,'bold','center');
+      const drag=this.pointer&&this.prepAreaAt?.(this.pointer.start)===card.key?this.pointer:null;
+      if(drag&&!done){this.box(card.x+5,183,222,140,'#FFF4D6',14,'#D69391');this.text((drag.prepTravel||0)>=18?'松手完成这一步':'随手划一下就好',card.x+116,317,11,'#B66B7A','bold','center');}
+      if(card.key==='dough'){
+        const step=g.prepWork.dough,notes=['① 收割麦穗','② 推动石磨，磨成面粉','③ 把清水倒进面粉','④ 揉出柔软面团'];
+        this.text(notes[step],card.x+116,207,12,ink,'bold','center');
+        if(step===0){
+          for(let j=0;j<5;j++){const px=card.x+69+j*23,wave=Math.sin(this.time*2+j)*2;
+            this.line([[px,294],[px+wave,237]],'#9B9450',3);
+            for(let k=0;k<5;k++){const yy=240+k*8;this.oval(px+wave+(k%2?5:-5),yy,5,3,'#E9C16F','#B49355',.8);}
+          }
+          this.line([[card.x+172,278],[card.x+190,244]],'#9A755F',5);this.line([[card.x+173,278],[card.x+194,270]],'#BFC5BF',5);
+        }else if(step===1){
+          this.oval(card.x+116,280,58,25,'#BEA18A',ink,2);this.oval(card.x+116,263,48,22,'#E3D3B6',ink,2);
+          this.oval(card.x+116,263,14,8,'#F4E8D3','#AB8F74',1);
+          this.line([[card.x+116,263],[card.x+152,242]],'#9F7758',6);
+          for(let j=0;j<10;j++)this.oval(card.x+116+Math.sin(j*5)*31,263+Math.cos(j*3)*12,2,1,'#D7B473');
+        }else if(step===2){
+          this.oval(card.x+117,282,57,21,cream,ink,2);this.oval(card.x+117,274,48,14,'#F1DFC0');
+          for(let j=0;j<9;j++)this.oval(card.x+117+Math.sin(j*6)*31,274+Math.cos(j*4)*9,3,2,'#FFF8E9');
+          this.box(card.x+50,242,34,34,'#B9D7DE',8,ink);this.oval(card.x+67,244,17,6,'#E1F5F3');
+          this.line([[card.x+85,260],[card.x+102,275]],'#A8D7DF',5);
+        }else{
+          const stretch=drag?Math.min(20,(drag.prepHorizontal||0)/6):0;
+          this.oval(card.x+116,278,38+stretch,20-stretch*.18,'#FFF0D1','#BA9169',2);
+          this.oval(card.x+100,270,12,4,'#FFF9E6');
+          this.line([[card.x+68,243],[card.x+164,243]],'#A87654',8);this.line([[card.x+84,243],[card.x+148,243]],'#E4BA83',13);
+        }
+        this.text(`备用面团 ${value} / 6`,card.x+116,338,13,ink,'bold','center');
+      }else if(card.key==='greens'){
+        const step=g.prepWork.greens,current=g.gardenCrop||g.prepSelected('greens');
+        const notes=['① 把种子播进土里','② 给幼苗浇水','③ 收下完整的青菜','④ 放上案板再切碎'];
+        this.text(notes[step],card.x+116,202,12,ink,'bold','center');
+        this.box(card.x+28,211,176,25,cream,11,'#AFC399');
+        this.text('◀',card.x+49,223,14,'#B8747C','bold','center');this.text(current,card.x+116,223,12,ink,'bold','center');this.text('▶',card.x+183,223,14,'#B8747C','bold','center');
+        if(step===0){this.hit(card.x+28,209,42,27,()=>g.cyclePrep('greens',-1));this.hit(card.x+162,209,42,27,()=>g.cyclePrep('greens',1));}
+        if(step===3){this.box(card.x+46,289,142,13,'#D5AB80',5,ink);this.drawWholeCrop(current,card.x+112,273,.83,2);
+          this.box(card.x+175,240,11,49,'#D1D6CE',2,ink);this.box(card.x+170,234,21,17,'#C98684',4,ink);
+        }else this.drawWholeCrop(current,card.x+116,271,step===1?.75:1,step===0?0:step===1?1:2);
+        this.text(`切好的小菜 ${value} / 5`,card.x+116,338,13,ink,'bold','center');
+      }else{
+        this.text('肉、糖、酱和鸡蛋要花金币买',card.x+116,207,11,ink,'normal','center');
+        this.box(card.x+39,241,154,12,'#B88B72',3,ink);this.box(card.x+39,298,154,12,'#B88B72',3,ink);
+        for(const [name,px,py] of [['牛肉',card.x+71,273],['猪肉',card.x+124,273],['鸡蛋',card.x+172,273]])this.drawShopItem(name,px,py,.57);
+        this.text(`已买食材 ${value} 份`,card.x+116,338,13,ink,'bold','center');
+        this.button('进店挑食材',card.x+47,356,138,39,()=>{this.shopReturn=this.overlay;this.overlay='shop';});
+      }
+      if(card.key!=='fillings'){
+        this.box(card.x+42,348,148,8,'#D7B69A',4);this.box(card.x+42,348,148*Math.min(1,value/max),8,done?'#91AE7E':'#D88891',4);
+        this.box(card.x+35,365,162,34,done?'#E8DFC9':cream,12,done?'#A6B98B':'#D3A58F');
+        this.text(done?'这一类备足啦':`点这里${card.key==='dough'?['收麦','磨粉','加水','揉面'][g.prepWork.dough]:['播种','浇水','收菜','切菜'][g.prepWork.greens]}`,card.x+116,382,14,ink,'bold','center');
+      }
+      if(card.key==='greens')this.text(`葱${g.prepared['香葱']||0} 韭${g.prepared['韭菜']||0} 荠菜${g.prepared['荠菜']||0} 大葱花${g.prepared['大葱花']||0}`,card.x+116,407,9,ink,'bold','center');
+      if(card.key==='fillings')this.text(`猪${g.prepared['猪肉']||0} 牛${g.prepared['牛肉']||0} 糖${g.prepared['芝麻糖']||0} 酱${g.prepared['酱香酱']||0} 蛋${g.prepared['鸡蛋']||0}`,card.x+116,407,9,ink,'bold','center');
+      if(this.prepFlash?.key===card.key&&this.time-this.prepFlash.at<.7){const t=(this.time-this.prepFlash.at)/.7;this.text('✓',card.x+190,336-t*25,28,'#648858','bold','center');}
+    }
+    this.text('整块区域都能滑 · 方向随意 · 也可以点大按钮',480,431,12,ink,'bold','center');
+    if(yard)this.button('回到小摊 ♡',350,448,260,51,()=>this.overlay=null);
+    else this.button(g.prepReady()?'开摊营业 ♡':'面团、青菜和商店食材各备一份',350,448,260,51,g.prepReady()?()=>g.openShop():null,!g.prepReady());
+    if(this.toast&&Date.now()<this.toast.until){this.box(240,113,480,30,cream,12,'#D69391');this.text(this.toast.text,480,128,12,ink,'bold','center');}
+  };
+  P.drawShop=function(){
+    const g=this.game;this.box(0,0,960,540,'rgba(86,56,62,.48)');this.box(45,35,870,470,cream,25,ink);
+    this.box(65,55,830,67,'#F7D9DF',17);this.text('街角小商店',98,88,29,ink,'bold');
+    this.text('肉馅、芝麻糖、酱和鸡蛋，缺什么就挑什么',98,118,12,'#967768');
+    this.oval(790,108,27,28,'#F4C3B6',ink,2);this.oval(769,84,11,23,'#F4C3B6',ink,2);this.oval(811,84,11,23,'#F4C3B6',ink,2);
+    this.oval(781,106,2,3,ink);this.oval(799,106,2,3,ink);this.line([[786,117],[790,120],[794,117]],ink,2);
+    this.text(`钱袋：${g.coins} 金币`,737,152,16,ink,'bold','center');
+    Object.entries(SUPPLY_PRICES).forEach(([name,price],i)=>{
+      const x=76+i*165,y=181;this.box(x,y,151,260,i%2?'#FFF2E7':'#FFF7E9',17,'#D7B39E');
+      this.box(x+13,y+15,125,112,'#F0DEC8',13);this.drawShopItem(name,x+75,y+75,1.35);
+      this.text(name,x+75,y+151,17,ink,'bold','center');this.text(`家里还有 ${g.prepared[name]||0} 份`,x+75,y+180,11,'#977769','normal','center');
+      this.button(`${price} 金币 · 买一份`,x+13,y+207,125,37,()=>{if(g.buySupply(name)){this.playSfx?.('coin');this.toast={text:`买好了${name}，放进备货篮 ♡`,until:Date.now()+1600};this.save();}else this.toast={text:g.coins<price?'金币不够啦':'现在无法购买',until:Date.now()+1600};});
+    });
+    this.button('带食材回去 ♡',355,458,250,37,()=>this.overlay=this.shopReturn||null,true);
+    if(this.toast&&Date.now()<this.toast.until){this.box(330,128,300,38,cream,16,'#DDB7B4');this.text(this.toast.text,480,147,13,ink,'bold','center');}
+  };
+  P.drawBusiness=function(){
+    const g=this.game;this.drawStreet();this.drawHeader();
+    this.button('菜谱',834,12,53,32,()=>this.overlay='book',true);this.button('收店',897,12,49,32,()=>{g.closeDay();this.save();},true);
+    g.orders.forEach((o,i)=>{
+      const x=168+o.slot*312,selected=o.id===g.selectedId;
+      const visits=g.customerVisits?.[o.customer.name]||0;
+      const patience=Number.isFinite(o.patience)?o.patience:100;
+      const mood=o.state==='ready'?'happy':patience<35?'impatient':'waiting';
+      const worry=patience<35?Math.sin(this.time*14+o.slot)*1.5:0;
+      this.drawCustomer(o.customer,x+worry,169+Math.sin(this.time*1.6+o.slot)*1.3,.78,mood);
+      this.box(x-102,58,204,69,cream,23,selected?'#BE8271':'#C5A38C');
+      this.line([[x-7,128],[x,134],[x+8,128]],'#BE8271',2);
+      this.drawFood(o.food,x-65,87,.4);this.text(o.food.name,x-34,80,13,ink,'bold');
+      this.text(`${o.food.price} 金币`,x-65,116,10,'#A56F4B','bold','center');
+      const wish=o.preference==='crispy'?'焦香些':o.preference==='soft'?'软乎些':'平常火候';
+      const request=o.state==='ready'?'做好啦，好香呀 ♡':`${patience<20?'快些·':o.familiarOrder?'上回那份·':visits>0?'换个口味·':''}${wish} ♡`;
+      this.text(request,x-34,101,request.length>11?10:11,'#AA8170');
+      this.box(x-34,112,89,5,'#EAD9CE',3);
+      this.box(x-34,112,89*Math.max(0,patience)/100,5,patience<35?'#E98A91':'#92BA89',3);
+      this.text(patience>=70?'♡ 耐心满满':patience>=35?'等待中':'有点着急',x+10,121,9,patience<35?'#C76E78':'#A88373','bold','center');
+      this.box(x+43,192,65,20,visits>0?'#FFF0C9':cream,9,visits>0?'#D7A45D':'#D7B59B');this.text((visits>0?'♡ ':'')+o.customer.name,x+75,202,9,ink,visits>0?'bold':'normal','center');
+      this.hit(x-120,58,240,172,()=>g.select(o.id));
+    });
+    this.box(0,226,960,314,'#EDCBA7');this.box(0,226,960,13,'#B68A71',3,ink);
+    const stock=g.stock||{dough:0,greens:0,fillings:0};
+    this.box(105,288,577,40,'#F6E4D4',10);
+    for(let j=0;j<28;j++)this.box(112+j*20,289,6,37,'#EDC5C2',1);
+    for(const yy of [295,316])this.box(108,yy,570,5,'#E9C2BE',1);
+    this.box(0,350,960,15,'#EDB8BE');
+    for(let j=0;j<32;j++){this.oval(j*30+15,365,15,5,j%2?'#F5D8CF':'#EDB8BE');this.line([[j*30+8,354],[j*30+22,354]],'#FFF1E0',1);}
+    this.box(307,12,300,32,cream,15,'#D5AF98');this.text(`今日备货  面团 ${stock.dough}  ·  青菜 ${stock.greens}  ·  馅料 ${stock.fillings}`,457,29,11,ink,'bold','center');
+    const dayProgress=Math.min(1,g.visitors/Math.max(1,g.targetVisitors));
+    this.box(443,239,119,35,cream,12,'#D5AF98');this.text(`今日街坊 ${g.visitors}/${g.targetVisitors}`,502,251,10,ink,'bold','center');this.box(455,262,95,4,'#E2C9B5',2);this.box(455,262,95*dayProgress,4,'#E58FA0',2);
+    for(let j=0;j<4;j++)this.line([[0,258+j*74],[960,258+j*74]],'#DAB58F',1);
+    this.box(14,272,78,74,cream,15,ink);
+    if(!g.supplySystemEnabled||stock.dough>0){this.drawIngredientPortion('原味',53,307,1);this.text(`面团 ${stock.dough}`,53,282,9,'#73875D','bold','center');}
+    else this.text('空篮',53,309,12,'#AA9280','normal','center');
+    this.text('取面团',53,336,11,ink,'bold','center');
+    INGREDIENTS.forEach((name,i)=>{
+      const x=139+i*63,shown=name;
+      if(g.nextIngredient(g.selected)===name)this.oval(x,306,30,19,'#FFF2D9','#C88594',2);
+      this.drawIngredient(shown,x,307,.76,!g.supplySystemEnabled||shown==='原味'||g.prepared[shown]>0);this.text(shown,x,337,10,ink,'bold','center');
+      if(name!=='原味'){
+        const count=g.prepared?.[shown]||0;
+        this.box(x-24,277,48,17,count?'#E9F0D9':'#F2E9DC',8,count?'#A8BF86':'#D2BAA4');
+        this.text(`备${count}`,x,286,count>=1000?8:9,count?'#73875D':'#A38E7E','bold','center');
+      }
+    });
+    this.text('街角早安 · 手作馍饼',285,255,14,'#A67A64','bold','center');
+    STATIONS.forEach((name,i)=>this.drawStation(name,702+(i%2)*119,244+Math.floor(i/2)*62,108,55,g.selected?.state==='station'&&g.selected.food.station===name));
+    g.orders.forEach((o,i)=>this.drawBoard(o,o.slot));
+    if(this.pointer&&this.pointer.moved)this.drawDragGhost();
+    if(this.toast&&Date.now()<this.toast.until){
+      const chars=Array.from(this.toast.text),lines=chars.length>30?[chars.slice(0,27).join(''),chars.slice(27).join('')]:[this.toast.text];
+      this.box(184,lines.length>1?180:194,592,lines.length>1?53:37,cream,18,ink);
+      lines.forEach((line,i)=>this.text(line,480,lines.length>1?195+i*21:212,lines.length>1?12:14,ink,'bold','center'));
+    }
+  };
+})();
+
+</script>
+  <script>
+(function(){
+  const node=typeof module!=='undefined'&&module.exports;
+  const UI=node?require('./ui').UI:window.MoBingUI;
+  const {needsFlip,INGREDIENTS}=node?require('./engine'):window.MoBingEngine;
+  const P=UI.prototype,ink='#765345',cream='#FFF5DC',rose='#C77788';
+  const end=P.end,food=P.drawFood,business=P.drawBusiness,move=P.move;
+  P.prepAreaAt=function(p){
+    if(!p||p.y<140||p.y>424)return null;
+    return p.x>=60&&p.x<=320?'dough':p.x>=330&&p.x<=590?'greens':null;
+  };
+  P.completePrep=function(key){
+    const step=this.game.prepWork[key];
+    const messages=key==='dough'?['麦穗收好了，接着磨粉','面粉磨好了，接着加水','水加好了，接着揉面','面团揉好了，收进篮子 +2']:['种子播好了，接着浇水','青菜长好了，接着收菜','整棵菜收好了，接着切菜','青菜切好了，收进小料碗 +1'];
+    if(this.game.advancePrep(key)){
+      this.prepFlash={key,at:this.time};this.playSfx(key==='greens'&&step===3?'cut':'knead');
+      this.toast={text:messages[step],until:Date.now()+1900};this.save();return true;
+    }
+    this.toast={text:'这一类已经备足啦，先回小摊用一些吧',until:Date.now()+1900};return false;
+  };
+  P.playSfx=function(kind){
+    if(this.soundOn===false)return;
+    if(typeof wx!=='undefined'&&wx.vibrateShort&&['cut','ready','coin'].includes(kind))try{wx.vibrateShort({type:'light'});}catch(_){}
+    if(typeof window==='undefined')return;
+    const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
+    try{
+      const ac=this.audioCtx||(this.audioCtx=new Audio()),now=ac.currentTime;
+      const notes={knead:[150,.055],ingredient:[420,.07],station:[220,.09],flip:[310,.08],cut:[540,.045],ready:[660,.09],coin:[760,.07]}[kind]||[260,.05];
+      const count=kind==='coin'?3:kind==='ready'?2:1;
+      for(let i=0;i<count;i++){const o=ac.createOscillator(),g=ac.createGain();o.type=kind==='knead'?'sine':'triangle';o.frequency.setValueAtTime(notes[0]+i*(kind==='coin'?150:90),now+i*.075);g.gain.setValueAtTime(.0001,now+i*.075);g.gain.exponentialRampToValueAtTime(.055,now+i*.075+.008);g.gain.exponentialRampToValueAtTime(.0001,now+i*.075+notes[1]);o.connect(g);g.connect(ac.destination);o.start(now+i*.075);o.stop(now+i*.075+notes[1]+.01);}
+    }catch(_){}
+  };
+  P.move=function(x,y){
+    const previous=this.pointer?.current;move.call(this,x,y);
+    if(!previous||(this.overlay&&this.overlay!=='yard'))return;
+    if(this.game.phase==='prep'||this.overlay==='yard'){
+      const p=this.pointer.current,s=this.pointer.start,dx=p.x-previous.x,dy=p.y-previous.y;
+      if(this.prepAreaAt(s)){
+        this.pointer.prepTravel=(this.pointer.prepTravel||0)+Math.hypot(dx,dy);
+        this.pointer.prepHorizontal=(this.pointer.prepHorizontal||0)+(Math.abs(dx)>Math.abs(dy)*1.25?Math.abs(dx):0);
+        this.pointer.prepVertical=(this.pointer.prepVertical||0)+(Math.abs(dy)>Math.abs(dx)*1.15?Math.abs(dy):0);
+        if(s.x<=306){const cx=190,cy=265,a=Math.atan2(previous.y-cy,previous.x-cx),b=Math.atan2(p.y-cy,p.x-cx);let d=b-a;if(d>Math.PI)d-=Math.PI*2;if(d<-Math.PI)d+=Math.PI*2;this.pointer.prepTurns=(this.pointer.prepTurns||0)+Math.abs(d);}
+      }
+      return;
+    }
+    if(this.game.phase!=='business')return;
+    const pointer=this.pointer,index=this.boardAt(pointer.start),o=this.game.orderAt(index);
+    if(o?.state==='shape'&&o.food.motions?.[o.shapes]==='circle'){
+      const cx=168+index*312,cy=449,a=Math.atan2(previous.y-cy,previous.x-cx),b=Math.atan2(pointer.current.y-cy,pointer.current.x-cx);
+      const ra=Math.hypot(previous.x-cx,previous.y-cy),rb=Math.hypot(pointer.current.x-cx,pointer.current.y-cy);
+      const vx=pointer.current.x-previous.x,vy=pointer.current.y-previous.y,t=Math.max(0,Math.min(1,((cx-previous.x)*vx+(cy-previous.y)*vy)/(vx*vx+vy*vy||1)));
+      const near=Math.hypot(previous.x+vx*t-cx,previous.y+vy*t-cy);
+      if(ra>12&&ra<74&&rb>12&&rb<74&&near>12){let d=b-a;if(d>Math.PI)d-=Math.PI*2;if(d<-Math.PI)d+=Math.PI*2;pointer.shapeTurns=(pointer.shapeTurns||0)+Math.abs(d);}
+    }
+    if(!o||!['batter_spread','egg_spread','sauce_spread'].includes(o.state))return;
+    const a={x:(previous.x-(168+index*312))/60,y:(previous.y-449)/32};
+    const b={x:(pointer.current.x-(168+index*312))/60,y:(pointer.current.y-449)/32};
+    const dx=b.x-a.x,dy=b.y-a.y,A=dx*dx+dy*dy,B=2*(a.x*dx+a.y*dy),C=a.x*a.x+a.y*a.y-1,D=B*B-4*A*C;
+    if(A===0||D<0)return;
+    const lo=Math.max(0,(-B-Math.sqrt(D))/(2*A)),hi=Math.min(1,(-B+Math.sqrt(D))/(2*A));
+    if(hi>lo){
+      pointer.spreadTravel=(pointer.spreadTravel||0)+Math.hypot(pointer.current.x-previous.x,pointer.current.y-previous.y)*(hi-lo);
+      pointer.spreadMarks=pointer.spreadMarks||[];pointer.spreadMarks.push([a.x+dx*lo,a.y+dy*lo,a.x+dx*hi,a.y+dy*hi]);
+      if(pointer.spreadMarks.length>64)pointer.spreadMarks.splice(0,1);
+    }
+  };
+  P.rememberSpread=function(o,key){o[key]=[...(o[key]||[]),...(this.pointer?.spreadMarks||[])].slice(-96);};
+  P.drawSpreadMarks=function(o,key,drag,color,width){
+    const c=this.ctx,marks=[...(Array.isArray(o[key])?o[key]:[]),...(drag?.spreadMarks||[])];
+    c.save();c.beginPath();c.ellipse(0,0,58,28,0,0,Math.PI*2);c.clip();
+    for(const mark of marks){if(!Array.isArray(mark)||mark.length!==4||!mark.every(Number.isFinite))continue;const [ax,ay,bx,by]=mark.map(n=>Math.max(-1,Math.min(1,n)));this.line([[ax*60,ay*32],[bx*60,by*32]],color,width);}
+    c.restore();
+  };
+  P.end=function(x,y){
+    const coinsBefore=this.game.coins;
+    const before=this.game.orders.map(o=>({id:o.id,slot:o.slot,state:o.state,k:o.kneads,s:o.shapes,n:o.ingredientIndex,c:o.cuts,f:o.flipped,b:o.prepBonus||0,name:o.customer.name,food:o.food}));
+    const p=this.point(x,y),start=this.pointer?.start;
+    const o=start&&this.game.orderAt(this.boardAt(start));
+    if(start&&(this.game.phase==='prep'||this.overlay==='yard')&&(!this.overlay||this.overlay==='yard')){
+      if(!this.pointer.moved&&start.y>=209&&start.y<=236&&start.x>=372&&start.x<=548){end.call(this,x,y);return;}
+      const key=this.prepAreaAt(start);
+      if(key){
+        const travel=Math.max(this.pointer.prepTravel||0,Math.hypot(p.x-start.x,p.y-start.y));
+        const buttonTap=!this.pointer.moved&&start.y>=360&&start.y<=401;
+        if(travel>=18||buttonTap)this.completePrep(key);
+        else this.toast={text:'在整块区域里随手划一下，或点下方大按钮',until:Date.now()+1900};
+        this.pointer=null;return;
+      }
+    }
+    if(start&&this.game.phase==='business'&&!this.overlay&&this.pointer.moved&&start.y>=277&&start.y<=347&&start.x>=108&&start.x<674){
+      const target=this.game.orderAt(this.boardAt(p));
+      if(target?.state==='sauce'){
+        const name=INGREDIENTS[Math.floor((start.x-108)/63)],bonus=target.prepBonus||0,ok=this.game.addIngredient(name,target.id);
+        if(ok){target.visualAt=this.time;target.visualKind='sauce';target.visualIngredient='酱香酱';this.game.select(target.id);this.playSfx('ingredient');this.save();if((target.prepBonus||0)>bonus)this.toast={text:'用上提前备好的酱香酱，香味更足 ♡',until:Date.now()+1600};}
+        else this.toast={text:this.game.message,until:Date.now()+1700};
+        this.pointer=null;return;
+      }
+    }
+    if(o?.state==='sauce_spread'&&this.pointer.moved&&!this.overlay){
+      const target=this.game.orderAt(this.boardAt(p));
+      if(target===o){
+        const amount=(this.pointer.spreadTravel||0)/70;
+        if(this.game.spreadSauce(o.id,amount)){this.rememberSpread(o,'sauceMarks');o.visualAt=this.time;o.visualKind='brush';this.playSfx('ingredient');this.save();}
+        else this.toast={text:'在圆饼上来回划动，把酱刷匀',until:Date.now()+1600};
+        this.pointer=null;return;
+      }
+    }
+    if(start&&this.game.phase==='business'&&!this.overlay&&this.pointer.moved){
+      const target=this.game.orderAt(this.boardAt(p));
+      if(target?.food.id==='egg_pancake'){
+        let handled=false,ok=false,kind='bounce';
+        if(start.x>=572&&start.x<=650&&start.y>=237&&start.y<=276){handled=true;ok=this.game.pourBatter(target.id);kind='pour';}
+        else if(this.ingredientAt(start)&&['egg_add','scallion_add'].includes(target.state)){
+          handled=true;const name=this.ingredientAt(start),bonus=target.prepBonus||0;ok=this.game.addIngredient(name,target.id);kind=name==='鸡蛋'?'egg':'scallion';
+          if(ok&&(target.prepBonus||0)>bonus)this.toast={text:`用上提前备好的${name}，香味更足 ♡`,until:Date.now()+1600};
+          if(!ok)this.toast={text:this.game.message,until:Date.now()+1700};
+        }else if(o===target&&['batter_spread','egg_spread'].includes(o.state)){
+          handled=true;const amount=(this.pointer.spreadTravel||0)/70,key=o.state==='batter_spread'?'batterMarks':'eggMarks';
+          ok=o.state==='batter_spread'?this.game.spreadBatter(o.id,amount):this.game.spreadEgg(o.id,amount);
+          if(ok)this.rememberSpread(o,key);
+        }
+        if(handled){if(ok){target.visualAt=this.time;target.visualKind=kind;this.game.select(target.id);this.playSfx(kind==='egg'?'ingredient':'knead');this.save();}this.pointer=null;return;}
+        if(target.state==='waiting'&&start.x>=18&&start.x<=92&&start.y>=273&&start.y<=346){this.toast={text:'鸡蛋饼用面糊，拖右上方的面糊碗来',until:Date.now()+2000};this.pointer=null;return;}
+      }
+    }
+    // Three strokes follow the visible guides and cross the pancake's centre.
+    if(o?.state==='cut'&&this.pointer.moved){
+      const cx=168+this.boardAt(start)*312,cy=450,dx=p.x-start.x,dy=p.y-start.y;
+      const t=Math.max(0,Math.min(1,((cx-start.x)*dx+(cy-start.y)*dy)/(dx*dx+dy*dy||1)));
+      const distance=Math.hypot((start.x+t*dx-cx)/63,(start.y+t*dy-cy)/32);
+      const across=(start.x-cx)*(p.x-cx)<0&&Math.abs(start.x-cx)>=22&&Math.abs(p.x-cx)>=22;
+      const slope=dy/(dx||1),valid=o.cuts===0?Math.abs(slope)<.32:o.cuts===1?slope>.58&&slope<1.55:slope<-.58&&slope>-1.55;
+      if(distance>.34||!across||!valid){this.toast={text:['横着划过粉色刀线','沿左上到右下斜切','换个方向，从左下斜切'][o.cuts],until:Date.now()+1600};this.pointer=null;return;}
+    }
+    end.call(this,x,y);
+    if(start&&this.game.phase==='business'&&!this.overlay&&this.game.supplySystemEnabled&&start.x>=18&&start.x<=92&&start.y>=273&&start.y<=346&&p.y>=374){
+      const target=this.game.orderAt(this.boardAt(p));
+      if(target?.state==='waiting'&&this.game.stock.dough<=0)this.toast={text:this.game.message,until:Date.now()+2200};
+    }
+    for(const b of before){
+      const now=this.game.orders.find(o=>o.id===b.id);
+      if(!now){if(b.state==='ready'){this.effects=this.effects||[];this.effects.push({x:168+b.slot*312,y:177,time:this.time,coins:this.game.coins-coinsBefore,food:b.food});this.toast={text:`${b.food.name} · 实收 ${b.food.price} 金币`,until:Date.now()+2600};this.playSfx('coin');}continue;}
+      if(b.state!==now.state||b.k!==now.kneads||b.s!==now.shapes||b.n!==now.ingredientIndex||b.c!==now.cuts||b.f!==now.flipped){
+        this.save();
+        const added=b.n!==now.ingredientIndex?now.food.ingredients[b.n]:null;
+        now.visualAt=this.time;now.visualKind=b.f!==now.flipped?'flip':b.c!==now.cuts?'cut':b.state==='cooking'&&now.state==='cut'?'plate':added?'ingredient':'bounce';
+        now.visualIngredient=added;
+        if(added&&(now.prepBonus||0)>b.b)this.toast={text:`用上提前备好的${added}，香味更足 ♡`,until:Date.now()+1600};
+        this.playSfx(b.f!==now.flipped?'flip':b.c!==now.cuts?'cut':added?'ingredient':b.state==='cooking'?'ready':now.state==='cooking'?'station':'knead');
+        if(b.state==='cooking'&&['cut','ready'].includes(now.state)){
+          const hearts=this.game.qualityHearts(now),label=this.game.qualityText(now);
+          this.toast={text:`出锅评价：${'♡'.repeat(hearts)} ${label}`,until:Date.now()+2200};
+          this.effects=this.effects||[];this.effects.push({x:168+now.slot*312,y:431,time:this.time,quality:true,hearts,label});
+        }
+      }
+    }
+    if(start&&p.y>=374&&start.y>=277&&start.y<=347&&start.x>=108&&start.x<674){
+      const target=this.game.orderAt(this.boardAt(p)),b=target&&before.find(v=>v.id===target.id);
+      if(target?.state==='ingredient'&&b?.n===target.ingredientIndex)this.toast={text:this.game.message,until:Date.now()+1700};
+    }
+  };
+  P.drawFood=function(f,x,y,s=1,stage='ready'){
+    const c=this.ctx;c.save();c.translate(x,y);c.scale(s,s);
+    if(stage==='cut'&&f.cutCount){
+      for(let j=0;j<6;j++){
+        const a=j*Math.PI/3,b=(j+1)*Math.PI/3,mid=(a+b)/2;
+        c.save();c.translate(Math.cos(mid)*4,Math.sin(mid)*3);
+        c.beginPath();c.moveTo(0,0);c.ellipse(0,0,59,33,0,a,b);c.closePath();c.clip();
+        this.drawFood(f,0,0,1,'ready');
+        this.line([[0,0],[59*Math.cos(a),33*Math.sin(a)]],'#A7734D',1.8);
+        c.restore();
+      }
+      c.restore();return;
+    }
+    const raw=stage==='raw'||stage==='shape'||stage==='station';
+    const heat=stage==='cooking'?Math.min(1,(this.foodDoneness||0)/100):1;
+    const browned=stage==='cooking'?heat:1;
+    const crust=raw?'#F6E8C9':heat>.75?'#D99A4F':heat>.35?'#E7B76E':'#F0D6A0';
+    const edge=raw?'#C9A986':'#A96E48';
+    if(f.art==='round_bun'){
+      const puff=raw?0:stage==='cooking'?heat*8:8,h=27+puff*.6;
+      this.oval(0,20,42,10,'#D7B991','#A67F65',1.5);
+      c.beginPath();c.moveTo(-40,11);c.bezierCurveTo(-47,-13,-27,-h-8,0,-h-9);c.bezierCurveTo(27,-h-8,48,-13,41,11);c.quadraticCurveTo(34,25,0,25);c.quadraticCurveTo(-34,25,-40,11);c.closePath();
+      c.fillStyle=raw?'#F3DFBB':'#FFF5DD';c.fill();c.strokeStyle='#A98066';c.lineWidth=2.5;c.stroke();
+      this.oval(-16,-16-puff*.35,12,5,raw?'#F8E9CA':'#FFFCEF');
+      c.beginPath();c.moveTo(-19,-7);c.quadraticCurveTo(0,-18,19,-7);c.strokeStyle=raw?'#DDC5A6':'#E5D3B5';c.lineWidth=1.6;c.stroke();
+      this.line([[22,3],[24,9]],'#E5CFAC',1.5);
+      for(const [px,py] of [[-28,8],[31,4],[-3,13]])this.oval(px,py,1.3,.8,'#E9D2AB');
+      c.restore();return;
+    }
+    if(f.art==='square_bun'){
+      const puff=raw?0:stage==='cooking'?heat*4:4;
+      for(const px of [-23,23]){
+        this.box(px-20,-14,40,35+puff,raw?'#DFC49D':'#E7CDA5',raw?5:8,'#A98066');
+        c.beginPath();c.moveTo(px-19,-8);c.quadraticCurveTo(px-20,-22-puff*.5,px-8,-23-puff*.5);
+        c.lineTo(px+8,-23-puff*.5);c.quadraticCurveTo(px+20,-22-puff*.5,px+19,-8);
+        c.lineTo(px+19,10);c.quadraticCurveTo(px+13,17,px,16);c.quadraticCurveTo(px-14,17,px-19,10);c.closePath();
+        c.fillStyle=raw?'#F5E4C5':'#FFF4DC';c.fill();c.strokeStyle='#A98066';c.lineWidth=2.2;c.stroke();
+        this.line([[px-9,-12],[px+8,-12]],'#E3C7A0',2);
+        this.line([[px-7,-5],[px-1,-1],[px+6,-4]],'#E8D0AA',1.4);
+        this.oval(px-7,-17-puff*.4,7,2,raw?'#F8EBD2':'#FFFCEF');
+      }
+      c.restore();return;
+    }
+    if(['large_pancake','sauce_pancake','egg_pancake'].includes(f.art)){
+      const egg=f.art==='egg_pancake',sauce=f.art==='sauce_pancake';
+      const fill=raw?'#F4E6C3':egg?(heat>.5?'#F2CD61':'#F6DF9A'):sauce?(heat>.5?'#DEAB6E':'#E8C493'):(heat>.5?'#E3B96F':'#EBD3A0');
+      this.oval(0,egg?6:8,60,egg?28:30,raw?'#E2CEAC':egg?'#C99B61':'#B9804B','#9B6F4F',2);
+      c.beginPath();c.moveTo(-59,-2);c.bezierCurveTo(-61,-19,-40,-33,-17,-32);c.bezierCurveTo(0,-37,15,-34,31,-29);
+      c.bezierCurveTo(53,-27,62,-13,59,4);c.bezierCurveTo(58,23,38,31,13,30);c.bezierCurveTo(-4,35,-26,29,-43,21);
+      c.bezierCurveTo(-55,16,-61,8,-59,-2);c.closePath();c.fillStyle=fill;c.fill();c.strokeStyle='#A77952';c.lineWidth=2.5;c.stroke();
+      for(const [px,py,r] of [[-35,-13,5],[32,-15,6],[35,14,4],[-19,17,4]])this.oval(px,py,r,r*.48,raw?'#F6E9CA':'#CB9157');
+      if(egg){
+        c.beginPath();c.moveTo(-37,-8);c.bezierCurveTo(-30,-25,-7,-24,8,-19);c.bezierCurveTo(29,-22,42,-6,37,10);c.bezierCurveTo(15,24,-4,17,-17,20);c.bezierCurveTo(-37,15,-46,1,-37,-8);c.closePath();c.fillStyle=raw?'#F6E8BA':'#F7D65E';c.fill();c.strokeStyle='#E4B751';c.lineWidth=1.5;c.stroke();
+        for(const [px,py] of [[-24,-8],[-3,10],[14,-12],[29,7]]){this.oval(px,py,6,4,'#FFE991');this.oval(px+2,py,2.4,1.8,'#E6AA40');}
+        for(const [px,py,a] of [[-34,4,-.4],[-19,13,.5],[-7,-12,-.6],[8,2,.3],[22,16,-.5],[31,-9,.7]]){
+          c.save();c.translate(px,py);c.rotate(a);
+          this.box(-6,-2,12,4,'#80A956',2,'#658B4C');this.box(-1,-2,4,4,'#E8E5AA',1);
+          this.line([[-6,1],[6,1]],'#4F8248',1);c.restore();
+        }
+      }else if(sauce&&!raw&&stage!=='cooking'){
+        for(const [x0,y0,x1,y1,x2,y2,x3,y3,w] of [[-40,-13,-18,-22,7,-12,38,-16,8],[-43,0,-21,-7,12,8,40,-1,10],[-32,17,-5,8,18,20,35,11,7]]){
+          c.beginPath();c.moveTo(x0,y0);c.bezierCurveTo(x1,y1,x2,y2,x3,y3);c.strokeStyle='#98503D';c.lineWidth=w;c.lineCap='round';c.stroke();
+          c.beginPath();c.moveTo(x0+3,y0-2);c.bezierCurveTo(x1,y1-3,x2,y2-2,x3-5,y3-2);c.strokeStyle='#BC6A4A';c.lineWidth=2;c.stroke();
+        }
+        for(let j=0;j<22;j++){const px=Math.sin(j*7.3)*43,py=Math.cos(j*3.8)*20;this.oval(px,py,1.7,1,j%4?'#FFF0C9':'#7D4835');}
+        for(const [px,py,a] of [[-31,-5,-.5],[-10,13,.3],[14,-9,-.4],[34,8,.4]]){c.save();c.translate(px,py);c.rotate(a);this.box(-5,-2,10,4,'#679852',2);this.line([[-3,0],[3,-1]],'#B5C681',1);c.restore();}
+      }else if(sauce){
+        for(const [px,py,sx] of [[-28,-8,8],[2,-12,6],[27,8,7],[-15,13,5]])this.oval(px,py,sx,2.5,raw?'#ECD8AE':'#CE9659');
+        c.beginPath();c.ellipse(0,-2,42,21,0,.2,Math.PI*1.8);c.strokeStyle=raw?'#E1C89C':'#C99862';c.lineWidth=2;c.stroke();
+      }else{
+        for(let j=0;j<3;j++){c.beginPath();c.ellipse(0,-1,16+j*14,7+j*8,0,.2,Math.PI*1.85);c.strokeStyle=raw?'#D9C29C':'#C58D52';c.lineWidth=2.3;c.stroke();}
+        for(const [px,py] of [[-36,-9],[-28,13],[-12,-14],[2,15],[18,-12],[33,7],[39,-6]]){this.oval(px,py,4,2.3,'#74A35A');this.line([[px-3,py+2],[px+3,py-2]],'#4F8649',1.6);}
+      }
+      c.restore();return;
+    }
+    if(f.art==='filled_pie'){
+      const kind=f.ingredients[0],beef=kind==='牛肉',sesame=kind==='芝麻糖',shepherd=kind==='荠菜';
+      const rx=beef?43:shepherd?43:sesame?46:49,ry=beef?26:shepherd?22:sesame?23:20;
+      const pieTop=raw?'#F4E2C0':browned<.3?'#EFDBAD':browned<.68?'#EBC78B':sesame?'#DEA763':beef?'#D39A58':shepherd?'#E7B978':'#E5B673';
+      this.oval(0,11,rx+1,beef?18:sesame?12:10,raw?'#E5CEAB':browned<.6?'#C89A70':'#B17B51','#9B7255',2);
+      this.oval(0,-2,rx,ry,pieTop,'#A87955',2.4);
+      // The crust stays sealed around every filling.
+      this.line([[-rx+5,8],[-31,12],[-22,10],[0,12],[23,10],[31,12],[rx-5,8]],raw?'#D4B48E':'#B57B4E',2.4);
+      this.line([[-28,14],[-17,15],[0,16],[18,15],[30,14]],raw?'#D4B48E':'#9B6545',2);
+      if(!raw&&browned>.45){for(const [px,py,sx] of [[-24,-9,7],[18,-12,6],[30,5,5]])this.oval(px,py,sx,2.5,browned>.75?'#C9884B':'#DEAC71');}
+      this.oval(-19,-11,12,3,raw?'#F8E9CB':'#F4D59D');
+      if(sesame){
+        for(let j=0;j<31;j++){const px=Math.sin(j*8.3)*35,py=Math.cos(j*3.7)*15;this.oval(px,py,2.3,1.25,j%4?'#FFF1CB':'#805439');}
+        // Sesame is sprinkled on top; the sugar filling remains hidden.
+      }else if(beef){
+        for(const [px,py] of [[-23,-5],[12,-9],[28,1]])this.line([[px-5,py+2],[px+5,py-2]],'#A26948',2.2);
+      }else if(shepherd){
+        for(const [px,py] of [[-22,-2],[13,-8]]){this.oval(px-2,py,5,2.2,'#D8C993');this.oval(px+2,py-1,4,1.8,'#CFBE87');}
+      }else{
+        for(const [px,py] of [[-25,-4],[10,-9],[26,3]])this.line([[px-7,py+2],[px+7,py-2]],'#D0B87C',2);
+      }
+      c.restore();return;
+    }
+    if(f.art==='half_moon'){
+      this.oval(0,20,49,9,'#D6B88C');
+      c.beginPath();c.moveTo(-48,11);c.bezierCurveTo(-42,-15,-24,-25,0,-25);c.bezierCurveTo(25,-25,42,-15,48,11);c.quadraticCurveTo(4,30,-48,11);c.closePath();c.fillStyle=raw?'#F3DEC0':browned<.35?'#F0D7A8':browned<.7?'#EDCA8C':'#E9BC77';c.fill();c.strokeStyle=edge;c.lineWidth=2.4;c.stroke();
+      c.beginPath();c.moveTo(-16,16);c.quadraticCurveTo(3,22,24,16);c.strokeStyle=raw?'#D9BA91':'#BA8555';c.lineWidth=2;c.stroke();
+      for(let i=-32;i<=32;i+=9){const y=11+8*(1-(i/46)**2);this.oval(i,y,6,3,raw?'#EAD4B3':'#D5A468',edge,1);this.line([[i-2,y-2],[i+2,y+2]],'#AD8059',1);}
+      for(const px of [-9,0,10])this.line([[px,19],[px+4,20]],raw?'#E2C8A4':'#C69462',1.5);
+      c.beginPath();c.moveTo(-26,2);c.quadraticCurveTo(-6,-11,14,-7);c.strokeStyle='#EFCF99';c.lineWidth=2;c.stroke();
+      if(!raw){this.oval(-24,6,6,2,'#C9884D');this.oval(23,2,5,2,'#C58B54');}
+      c.restore();return;
+    }
+    if(f.art==='dumpling'){
+      this.oval(0,23,43,8,'#CDAF8C');
+      c.beginPath();c.moveTo(-43,12);c.bezierCurveTo(-34,-9,-16,-23,1,-23);c.bezierCurveTo(20,-23,35,-9,43,12);c.quadraticCurveTo(0,31,-43,12);c.closePath();c.fillStyle=raw?'#F4E5C9':browned<.4?'#F2DEAE':browned<.75?'#EFD49A':'#F0C885';c.fill();c.strokeStyle=edge;c.lineWidth=2.3;c.stroke();
+      this.line([[-37,10],[-25,18],[-10,22],[10,22],[29,17],[38,11]],raw?'#DBBD97':browned<.55?'#C99A6C':'#B97645',raw?2:2+browned*3);
+      c.beginPath();c.moveTo(-32,0);c.quadraticCurveTo(0,-32,32,0);c.strokeStyle='#D3A779';c.lineWidth=3;c.stroke();
+      for(const [px,py,angle] of [[-27,-3,-.65],[-18,-12,-.42],[-7,-18,-.18],[6,-18,.18],[18,-12,.42],[27,-3,.65]]){c.save();c.translate(px,py);c.rotate(angle);this.line([[-4,5],[0,-2],[4,5]],'#A87858',2);c.restore();}
+      this.oval(0,-20,7,2.8,'#FBECCE');this.line([[-29,7],[-17,10]],'#F9DFAF',2);
+      for(const px of [-25,-9,11,27])this.oval(px,19-Math.abs(px)*.14,2.8,1.4,raw?'#B9A077':'#99603D');
+      this.oval(29,12,6,2.2,raw?'#D4AD8B':'#A9775A');
+      for(const px of [26,30,33])this.oval(px,12,1.6,.8,raw?'#BC9275':'#85533F');
+      if(!raw&&browned>.55)for(const px of [-29,-8,17,31])this.oval(px,21-Math.abs(px)*.12,4,1.4,'#8F5738');
+      c.restore();return;
+    }
+    if(f.art==='potstick'){
+      for(const [px,py,angle] of [[-18,-10,-.16],[16,0,.1],[-9,12,-.11]]){
+        c.save();c.translate(px,py);c.rotate(angle);
+        this.oval(0,12,29,5,'#D4B18A');
+        c.beginPath();c.moveTo(-28,5);c.quadraticCurveTo(-27,-7,-16,-10);c.quadraticCurveTo(0,-13,17,-9);c.quadraticCurveTo(28,-6,29,5);c.quadraticCurveTo(4,17,-28,5);c.closePath();c.fillStyle=raw?'#F3E1BF':browned<.4?'#F1D8A9':browned<.75?'#EFCB97':'#ECC18A';c.fill();c.strokeStyle=edge;c.lineWidth=2;c.stroke();
+        this.line([[-24,6],[-4,11],[18,9],[26,6]],raw?'#D8B58F':browned<.55?'#BC8759':'#A8643E',raw?2:2+browned*3);
+        this.line([[-19,-4],[-9,-8],[1,-6],[11,-8]],'#B98C66',1.6);
+        this.oval(-12,-2,5,2,'#FFF0D0');this.oval(17,2,3,1.4,raw?'#E6CBA5':'#C98C50');
+        if(!raw&&browned>.6)this.line([[-11,11],[11,11]],'#8A5135',2);
+        c.restore();
+      }
+      c.restore();return;
+    }
+    if(f.art!=='flower_roll'){c.restore();food.call(this,f,x,y,s,stage);return;}
+    // Two crossed ribbons form one knotted roll; the scallion sits inside its folds.
+    const puff=raw?0:stage==='cooking'?heat*4:4;
+    c.scale(1+puff*.013,1+puff*.013);
+    this.oval(0,20,45,10,'#D9BE97','#A98066',2);
+    c.beginPath();c.moveTo(-43,8);c.bezierCurveTo(-43,-12,-29,-22,-14,-16);c.bezierCurveTo(-4,-29,17,-26,25,-14);c.bezierCurveTo(43,-15,47,0,40,12);c.bezierCurveTo(23,24,-18,25,-40,13);c.closePath();c.fillStyle=raw?'#EBD6B6':'#FFF0D3';c.fill();c.strokeStyle='#A88162';c.lineWidth=2.4;c.stroke();
+    const ribbon=(path)=>{c.beginPath();c.moveTo(...path[0]);c.bezierCurveTo(...path[1]);c.strokeStyle='#9D785F';c.lineWidth=20;c.lineCap='round';c.stroke();c.strokeStyle=raw?'#F0DCBC':'#FFF5DB';c.lineWidth=16;c.stroke();};
+    ribbon([[-32,5],[-22,-22,11,-25,31,3]]);
+    for(const [px,py] of [[-28,-3],[-18,-15],[0,-18],[19,-12],[29,2]])this.oval(px,py,3,1.8,'#719B57');
+    ribbon([[-27,-10],[-14,17,14,25,29,-8]]);
+    c.beginPath();c.moveTo(-26,-11);c.bezierCurveTo(-13,7,9,14,26,-6);c.strokeStyle='#D3B18E';c.lineWidth=2.2;c.stroke();
+    for(const [px,py,a] of [[-22,-4,-.4],[-15,8,.3],[-1,12,-.3],[12,9,.4],[22,-1,-.4]]){c.save();c.translate(px,py);c.rotate(a);this.oval(0,0,3.3,1.8,'#608D4D');this.line([[-2,0],[2,-1]],'#A5BC76',1);c.restore();}
+    this.oval(-1,0,10,7,raw?'#F0DCBC':'#FFF8E5','#B99573',1.4);
+    c.beginPath();c.arc(-1,0,5,.4,Math.PI*1.7);c.strokeStyle='#D5B998';c.lineWidth=2;c.stroke();
+    c.restore();
+  };
+  P.drawPreparing=function(o,x,y){
+    const c=this.ctx,age=this.time-(o.visualAt??-10),bounce=age<.38?Math.sin(age/.38*Math.PI)*.12:0;
+    c.save();c.translate(x,y);c.scale(1+bounce,1-bounce);
+    const drag=this.pointer&&this.boardAt(this.pointer.start)===o.slot?this.pointer:null;
+    if(o.food.id==='egg_pancake'&&['waiting','batter_spread','egg_add','egg_spread','scallion_add'].includes(o.state)){
+      this.box(-73,5,146,33,'#EAA3AE',10,ink);this.line([[61,0],[85,-10]],ink,9);this.oval(0,0,69,35,'#514842',ink,2);
+      if(o.state!=='waiting'){
+        const live=(drag?.spreadTravel||0)/70;
+        const r=o.state==='batter_spread'?24+Math.min(3,(o.spreads||0)+live)*11.67:59;
+        this.oval(0,0,r,r*.49,'#F9E8BB','#CFB27A',1.5);
+        if(o.state==='batter_spread')this.drawSpreadMarks(o,'batterMarks',drag,'#FFF2D6',9);
+        if(['egg_spread','scallion_add'].includes(o.state)){
+          const e=o.state==='scallion_add'?3:Math.min(3,(o.eggSpreads||0)+live);
+          this.oval(0,0,15+e*14,10+e*5,'#F3CA53');
+          if(e===0)this.oval(0,-2,8,7,'#EEAB35');
+          else for(let j=0;j<e+1;j++){c.beginPath();c.ellipse(0,0,12+j*12,6+j*5,0,.2,Math.PI*1.8);c.strokeStyle='#FFEBA0';c.lineWidth=3;c.stroke();}
+          this.drawSpreadMarks(o,'eggMarks',o.state==='egg_spread'?drag:null,'#F4D46B',13);
+          this.drawSpreadMarks(o,'eggMarks',o.state==='egg_spread'?drag:null,'#FFEAA0',2);
+        }
+        if(drag&&drag.moved){const tx=Math.max(-42,Math.min(42,drag.current.x-x)),ty=Math.max(-17,Math.min(17,drag.current.y-y));this.line([[tx,ty-27],[tx,ty+3]],'#C59367',5);this.line([[tx-17,ty+4],[tx+17,ty+4]],'#DEC29A',6);}
+        if(age<.65&&o.visualKind==='pour'){
+          const t=age/.65;this.line([[12,-42],[0,-4]],'#F9E8BB',Math.max(1,7*(1-t)));this.oval(14,-42,13,6,cream,ink,1.5);
+        }
+        if(age<.65&&o.visualKind==='egg'){
+          this.oval(-15-age*16,-28-age*18,10,7,'#E7C49B',ink,1.5);this.oval(15+age*16,-28-age*18,10,7,'#E7C49B',ink,1.5);
+        }
+      }else this.text('倒入面糊',0,0,12,cream,'bold','center');
+    }else if(o.state==='knead'){
+      const stretch=drag?Math.min(.35,Math.abs(drag.current.x-drag.start.x)/170):0;
+      this.oval(0,20,58,12,'#DAB991');this.oval(0,0,37+o.kneads*3+stretch*30,29-stretch*20,cream,'#BA9169',2);
+      for(let j=0;j<11;j++)this.oval(Math.sin(j*7)*66,Math.cos(j*3)*28,1.5,1,'#FFF4DF');
+      if(drag&&drag.moved){this.oval(-15,-6,10,3,'#E3CDA5');this.oval(8,-6,10,3,'#E3CDA5');}
+    }else if(o.state==='ingredient'){
+      this.oval(0,0,53,29,cream,'#BA9169',2);
+      for(let j=0;j<o.ingredientIndex;j++)this.drawIngredientBits(o.food.ingredients[j],(j-(o.ingredientIndex-1)/2)*18,0,.68,.72);
+    }else if(o.state==='shape'){
+      const t=o.shapes/o.food.shapeCount;
+      if(o.food.art==='round_bun'){
+        if(o.shapes===0){this.oval(0,3,51,23,'#F4E3C4','#BA9169',2);this.line([[-42,6],[-22,16],[0,18]],'#D4B58D',2);}
+        else if(o.shapes===1){this.oval(0,3,43,26,'#F6E8CC','#BA9169',2);this.line([[-25,-6],[-8,-16],[9,-11],[23,-1]],'#D9BB93',2);}
+        else this.drawFood(o.food,0,0,.96,'raw');
+        if(drag){this.oval(drag.current.x-x,drag.current.y-y,8,4,'#EDD8B5');}
+      }else if(o.food.art==='square_bun'){
+        if(o.shapes===0){this.box(-52,-20,104,42,'#F5E4C6',8,'#BA9169');this.line([[0,-19],[0,20]],'#D4B28A',2);}
+        else this.drawFood(o.food,0,0,.95,'raw');
+      }else if(o.food.art==='flower_roll'){
+        if(o.shapes===0){
+          this.oval(0,3,57,20,cream,'#BA9169',2);this.drawIngredientBits('香葱',0,1,.72,.9);
+          const tx=drag?Math.max(-58,Math.min(58,drag.current.x-x)):43;this.line([[tx-28,-22],[tx+28,-22]],'#A67656',8);this.line([[tx-18,-22],[tx+18,-22]],'#E3BA85',14);
+        }else if(o.shapes===1){
+          this.box(-54,-13,108,27,'#F8E8C9',13,'#BA9169');
+          for(let j=-3;j<=3;j++){this.line([[j*14,-10],[j*14,10]],'#DFC39C',2);this.oval(j*14+4,-3,3,2,'#6D9A59');}
+          this.oval(-53,0,12,13,'#F4DFC0','#BA9169',2);this.oval(-53,0,6,7,'#DDBD91','#BA9169',1);
+        }else{
+          c.save();c.rotate(-.16);this.box(-51,-9,102,18,'#F8E7C7',9,'#BA9169');for(let j=-3;j<=3;j++)this.line([[j*14,-8],[j*14+8,8]],j%2?'#DDBB8F':'#71975B',2);c.restore();
+          c.save();c.rotate(.7);this.line([[-22,0],[22,0]],'#C28E65',7);c.restore();
+        }
+      }else if(o.food.art==='half_moon'&&o.shapes===0){
+        this.oval(0,3,54,27,'#F5E4C5','#BA9169',2);
+        for(let j=0;j<7;j++)this.drawIngredientBits('韭菜',-31+j*10,8+Math.sin(j)*3,.38,.55);
+        this.line([[0,-22],[0,19]],'#D6B48A',1.5);
+      }else if(o.food.art==='dumpling'&&o.shapes<2){
+        this.oval(0,4,51,26,'#F5E4C5','#BA9169',2);
+        for(let j=0;j<5;j++)this.drawIngredientBits('猪肉',-24+j*12,6,.35,.5);
+        if(o.shapes===1)this.line([[-42,10],[0,-18],[42,10]],'#B98A6B',3);
+      }else if(o.food.art==='potstick'&&o.shapes===0){
+        this.box(-57,-15,114,31,'#F5E4C5',10,'#BA9169');
+        for(let j=-4;j<=4;j++)this.drawIngredientBits('香葱',j*11,2,.29,.45);
+      }else if(['large_pancake','sauce_pancake'].includes(o.food.art)&&o.shapes<2){
+        const long=o.shapes===0;
+        if(long)this.box(-52,-17,104,34,'#F5E4C5',11,'#BA9169');
+        else this.oval(0,0,48,27,'#F5E4C5','#BA9169',2);
+        for(let j=-3;j<=3;j++)this.drawIngredientBits('香葱',j*13,Math.sin(j*2)*5,.27,.4);
+        if(o.shapes===1&&o.food.art==='large_pancake')this.line([[-16,-12],[0,-17],[17,-8]],'#D3AE7D',2);
+      }else if(o.food.art==='egg_pancake'){
+        this.oval(0,0,60,32,cream,'#BA9169',2);
+        this.oval(0,0,17+t*39,12+t*16,'#F4CB59');
+        for(let j=0;j<o.shapes+1;j++){c.beginPath();c.ellipse(0,0,12+j*12,7+j*6,0,.2,Math.PI*1.7);c.strokeStyle='#FFE89D';c.lineWidth=3;c.stroke();}
+      }else if(t<.5){
+        this.oval(0,0,43+t*25,24,cream,'#BA9169',2);
+        const prepIngredients=o.food.id==='sauce_cake'?[o.food.ingredients[0]]:o.food.ingredients;
+        for(let j=0;j<prepIngredients.length;j++)this.drawIngredientBits(prepIngredients[j],(j-(prepIngredients.length-1)/2)*15,0,.62,.7);
+      }else this.drawFood(o.food,0,0,.85+t*.15,'raw');
+      if(!['round_bun','square_bun','flower_roll'].includes(o.food.art)){
+        const motion=o.food.motions?.[o.shapes]||'horizontal';
+        if(motion==='horizontal'){
+          const tx=drag?Math.max(-65,Math.min(65,drag.current.x-x)):45,ty=drag?-9:-23;
+          this.line([[tx-26,ty],[tx+26,ty]],'#A67656',8);this.line([[tx-17,ty],[tx+17,ty]],'#E3BA85',14);
+        }else if(drag?.moved){
+          const sx=drag.start.x-x,sy=drag.start.y-y,px=drag.current.x-x,py=drag.current.y-y;
+          if(motion==='circle'){
+            c.beginPath();c.arc(0,0,34,-1.1,-1.1+Math.min(Math.PI*2,drag.shapeTurns||0));c.strokeStyle='#D88F9D';c.lineWidth=4;c.stroke();
+          }else this.line([[sx,sy],[px,py]],'#D88F9D',3);
+          this.oval(px,py,7,7,'#F9D6CA',ink,1);
+        }else{
+          if(motion==='vertical')this.line([[0,-29],[0,17]],'#D88F9D',3);
+          if(motion==='diagonal')this.line([[-27,-17],[27,20]],'#D88F9D',3);
+          if(motion==='circle'){c.beginPath();c.arc(0,0,35,-1.2,2.7);c.strokeStyle='#D88F9D';c.lineWidth=3;c.stroke();}
+        }
+      }
+    }else{
+      if(['ready','sauce','sauce_spread'].includes(o.state))this.drawServingDish(o.food,0,0);
+      if(o.state==='cooking'){
+        this.drawCookware(o.food.station,0,8,o.food.station==='蒸笼'?1.12:1.02);
+        c.save();if(o.visualKind==='flip'&&age<.5)c.scale(1,Math.max(.12,Math.abs(Math.cos(age/.5*Math.PI))));
+        this.foodDoneness=o.cook;this.drawFood(o.food,0,o.food.station==='蒸笼'?-2:0,.9,'cooking');this.foodDoneness=0;c.restore();
+        if(drag&&needsFlip(o.food)&&!o.flipped&&Math.abs(drag.start.x-x)<59&&drag.start.y>=y-37&&drag.start.y<=y+30){
+          const px=Math.max(-68,Math.min(68,drag.current.x-x)),py=Math.max(-48,Math.min(42,drag.current.y-y));
+          this.line([[px+22,py+23],[px+4,py+3]],'#9B6C59',7);
+          this.box(px-14,py-4,29,12,'#E8DBCE',4,ink);
+          if(drag.moved)this.line([[px,py-11],[px,py-28]],rose,2);
+        }
+        if(o.food.station!=='蒸笼'&&o.cook>45){
+          c.save();c.globalAlpha=Math.min(.42,(o.cook-45)/140);
+          for(let j=0;j<8;j++)this.oval(Math.sin(j*8.1)*34,Math.cos(j*5.3)*18,3+j%2,1.5,'#9B5C36');
+          c.restore();
+        }
+        for(let j=0;j<(o.food.station==='蒸笼'||o.food.station==='蒸煎锅'?4:2);j++){const r=(this.time*17+j*13)%35;c.save();c.globalAlpha=1-r/38;this.line([[-30+j*20,-23-r],[-34+j*20,-30-r]],'#FFF7E5',3);c.restore();}
+      }else{
+        if(o.cuts>0&&o.food.cutCount){
+          const angles=[0];for(let j=0;j<o.cuts;j++)angles.push(j*Math.PI/3,(j*Math.PI/3)+Math.PI);angles.push(Math.PI*2);
+          const edges=[...new Set(angles)].sort((a,b)=>a-b);
+          for(let j=0;j<edges.length-1;j++){
+            const a=edges[j],b=edges[j+1],mid=(a+b)/2,gap=o.state==='ready'?4:2;
+            c.save();c.translate(Math.cos(mid)*gap,Math.sin(mid)*gap);c.beginPath();c.moveTo(0,0);c.ellipse(0,0,58,35,0,a,b);c.closePath();c.clip();this.drawFood(o.food,0,0,1);c.restore();
+          }
+        }else this.drawFood(['sauce','sauce_spread'].includes(o.state)?{...o.food,art:'large_pancake'}:o.food,0,0,1,o.state==='station'?'raw':'ready');
+        if(o.visualKind==='plate'&&age<.5){c.save();c.globalAlpha=1-age*2;this.line([[40+age*40,5],[78+age*40,-14]],ink,5);this.oval(40+age*40,5,15,8,'#DCD5C5',ink);c.restore();}
+      }
+      if(['sauce','sauce_spread'].includes(o.state)){
+        const live=(drag?.spreadTravel||0)/70,amount=o.state==='sauce'?0:Math.min(3,(o.sauceSpreads||0)+live);
+        const bx=drag&&o.state==='sauce_spread'?Math.max(-41,Math.min(43,drag.current.x-x)):28;
+        const by=drag&&o.state==='sauce_spread'?Math.max(-18,Math.min(17,drag.current.y-y)):-14;
+        if(o.state==='sauce_spread'){
+          this.oval(0,2,12,6,'#A85C3D');this.oval(-3,0,5,1.5,'#D99362');
+          this.drawSpreadMarks(o,'sauceMarks',drag,'#AE6340',15);
+          this.drawSpreadMarks(o,'sauceMarks',drag,'#D6905E',2);
+          if(!o.sauceMarks?.length&&!drag?.spreadMarks?.length&&amount>0)for(let j=0;j<Math.ceil(amount);j++){c.beginPath();c.ellipse(0,2,18+j*9,8+j*4,0,.2,2.7);c.strokeStyle='#A45D3F';c.lineWidth=7;c.stroke();}
+        }
+        c.save();c.translate(bx,by);c.rotate(.35);
+        this.line([[0,-50],[0,-13]],'#8E5E42',8);this.line([[-2,-45],[0,-17]],'#C99A6D',2);
+        this.box(-8,-14,16,9,'#B3AAA0',2,ink);
+        for(let k=-5;k<=5;k+=2)this.line([[k,-5],[k*1.15,7]],'#9B6A4A',1.6);
+        this.oval(0,8,11,2.7,'#98543B');c.restore();
+      }
+      if(o.state==='cut'){
+        const a=o.cuts*Math.PI/3,gx=58*Math.cos(a),gy=35*Math.sin(a);
+        c.save();c.globalAlpha=.78;this.line([[-gx,-gy],[gx,gy]],'#E98DA3',3);this.oval(-gx,-gy,4,4,'#FFF6E2','#D38396',1);this.oval(gx,gy,4,4,'#FFF6E2','#D38396',1);c.restore();
+        const tx=drag?Math.max(-70,Math.min(75,drag.current.x-x)):78,ty=drag?Math.max(-30,Math.min(30,drag.current.y-y)):-10;
+        c.save();c.translate(tx,ty);c.rotate(-.18);
+        c.beginPath();c.moveTo(-21,-18);c.lineTo(10,-18);c.lineTo(12,0);c.lineTo(-21,0);c.closePath();c.fillStyle='#D8DFDC';c.fill();c.strokeStyle=ink;c.lineWidth=1.5;c.stroke();
+        this.line([[-21,0],[12,0]],'#F8F9EE',2);this.box(-4,-38,14,20,'#A97459',4,ink);this.oval(3,-30,1.8,1.8,'#E8C6A0');c.restore();
+      }
+    }
+    if(o.visualKind==='scallion'&&age<.8){
+      for(let j=0;j<12;j++){const t=Math.min(1,age/.8+j*.025);this.oval(Math.sin(j*7)*42,-45*(1-t)+Math.cos(j*3)*17,3,2,'#719B5C');}
+    }
+    if(o.state==='ready'&&o.food.station==='蒸笼'){
+      for(let j=0;j<3;j++){const rise=(this.time*12+j*9)%24;c.save();c.globalAlpha=.55*(1-rise/24);this.line([[-20+j*20,-24-rise],[-24+j*20,-30-rise],[-20+j*20,-34-rise]],'#FFF9EA',2);c.restore();}
+    }
+    if(o.visualKind==='ingredient'&&o.visualIngredient&&age<.8){
+      const t=Math.min(1,age/.8);
+      c.save();c.globalAlpha=1-t*.28;
+      this.drawIngredientBits(o.visualIngredient,0,-48*(1-t),.82,.65+t*.3);
+      c.restore();
+    }
+    c.restore();
+  };
+  P.ingredientDropHint=function(o){
+    const p=this.pointer;if(!p?.moved||this.overlay)return null;
+    const name=this.ingredientAt(p.start);if(!name)return null;
+    const expected=this.game.nextIngredient(o),hovered=this.boardAt(p.current)===o.slot;
+    if(this.game.supplySystemEnabled&&name!=='原味'&&!(this.game.prepared[name]>0))return hovered?{valid:false,label:`${name}用完了，先补货`}:null;
+    if(name===expected)return {valid:true,label:`${name}放这里 · 松手加入`};
+    if(hovered)return {valid:false,label:expected?`这份需要${expected}`:'这一步暂时不用加料'};
+    return null;
+  };
+  P.drawBoard=function(o,i){
+    const x=24+i*312,selected=o.id===this.game.selectedId;
+    this.box(x,379,288,148,'#BD8C73',19,ink);this.box(x,374,288,148,selected?'#FBE4BF':'#EFD4AF',19,'#B78D70');
+    const dropHint=this.ingredientDropHint(o);
+    if(dropHint){this.ctx.save();this.ctx.setLineDash([6,5]);this.box(x+4,378,280,140,'rgba(255,249,232,.08)',16,dropHint.valid?'#77975D':'#CC8D83');this.ctx.setLineDash([]);this.ctx.restore();}
+    this.line([[x+15,399],[x+55,401],[x+103,399]],'#E1BD93',1);
+    this.line([[x+163,515],[x+211,513],[x+269,515]],'#D6AE83',1);
+    this.line([[x+9,420],[x+9,478]],'#FFECD0',2);
+    for(let j=0;j<10;j++)this.oval(x+101+(j*17)%88,412+(j*23)%71,j%3?1:1.6,.7,'rgba(255,250,231,.6)');
+    this.text(o.food.name,x+15,392,13,ink,'bold');
+    const labels={waiting:o.food.id==='egg_pancake'?'面糊':'备面',batter_spread:'摊面糊',egg_add:'加鸡蛋',egg_spread:'抹鸡蛋',scallion_add:'撒葱花',knead:'揉面',ingredient:'配料',shape:'塑形',station:'入锅',cooking:'掌火',sauce:'加酱',sauce_spread:'刷酱',cut:'切块',ready:'交付'};
+    this.box(x+229,382,47,21,cream,9);this.text(labels[o.state],x+252,393,11,rose,'bold','center');
+    if(o.state==='waiting'&&o.food.id!=='egg_pancake'){
+      this.oval(x+144,450,59,31,'#F3DAB6','#D2AB86',1);this.text('＋',x+144,444,27,'#BA9576','normal','center');this.text('拖一团面来',x+144,471,12,'#A47A60','normal','center');
+    }else this.drawPreparing(o,x+144,449);
+    if(o.state==='cooking'){
+      const target=this.game.cookTarget(o);
+      const needsTurn=needsFlip(o.food)&&!o.flipped,ideal=o.cook>=target-10&&o.cook<=target+10;
+      this.box(x+12,413,70,7,'#E0BC99',4);this.box(x+12+(target-10)/120*70,413,20/120*70,7,'#A2BD80',2);
+      this.line([[x+12+o.cook/120*70,410],[x+12+o.cook/120*70,423]],ink,2);
+      const cue=o.cook<28?'慢慢加热':needsTurn?'记得翻面':o.cook<target-10?'再等一会':ideal?'火候正好':'尽快出锅';
+      this.text(cue,x+47,433,10,ideal&&!needsTurn?'#66864E':o.cook>target+10?'#B76F63':ink,'bold','center');
+      ['low','medium','high'].forEach((h,j)=>{const bx=x+12+j*24;this.box(bx,448,21,23,o.heat===h?'#D98D8E':cream,6);this.text(['小','中','大'][j],bx+10,460,10,ink,'bold','center');this.hit(bx,448,21,23,()=>{if(this.game.setHeat(h,o.id))this.save();});});
+      if(needsFlip(o.food)&&!o.flipped)this.button('↑翻面',x+211,413,64,30,o.cook>=28?()=>{this.game.flip(o.id);o.visualAt=this.time;o.visualKind='flip';}:null,true);
+      if(ideal&&!needsTurn)this.box(x+207,450,72,38,'#E5EDCC',14,'#9CB67A');
+      this.button('出锅',x+211,454,64,30,o.cook>=55?()=>this.game.finishCook(o.id):null,o.cook<55);
+    }
+    const motion=o.state==='shape'?o.food.motions?.[o.shapes]:null;
+    const gesture={tap:'轻点 · ',horizontal:'左右划 · ',vertical:'上下划 · ',diagonal:'斜着划 · ',circle:'绕圈划 · '}[motion]||'';
+    let hint=gesture+this.game.instruction(o);
+    if(dropHint)hint=dropHint.label;
+    if(o.state==='ready')hint='拖到上方客人手里';
+    this.text(hint,x+144,505,hint.length>20?11:12,ink,'bold','center');
+    if((o.prepBonus||0)>0&&!['ready','cut'].includes(o.state)){this.box(x+184,482,82,18,'#EEF2D8',8,'#A8B88A');this.text(`备货加成 +${o.prepBonus}`,x+225,491,9,'#748365','bold','center');}
+    if(['knead','shape'].includes(o.state)){
+      const n=o.state==='knead'?3:o.food.shapeCount,value=o.state==='knead'?o.kneads:o.shapes;
+      for(let j=0;j<n;j++)this.oval(x+24+j*12,481,3,3,j<value?'#C97E84':'#DBBC98');
+    }
+    if(['batter_spread','egg_spread','sauce_spread'].includes(o.state)){
+      const live=this.pointer&&this.boardAt(this.pointer.start)===i?(this.pointer.spreadTravel||0)/70:0;
+      const progress=Math.min(1,((o.state==='batter_spread'?o.spreads:o.state==='egg_spread'?o.eggSpreads:o.sauceSpreads||0)+live)/3);
+      this.box(x+72,483,144,5,'#DAB991',3);this.box(x+72,483,144*progress,5,'#BA9980',3);
+    }
+    if(o.state==='ready')this.hit(x+216,414,60,69,()=>{if(this.game.serve(o.id)){this.toast={text:this.game.lastReaction,until:Date.now()+1800};this.save();}});
+    if(o.state==='ready'){this.box(x+223,428,46,43,cream,7,rose);this.text('交付',x+246,450,12,rose,'bold','center');}
+    if(['cut','ready'].includes(o.state)&&o.quality>0){
+      const hearts=this.game.qualityHearts(o),label=this.game.qualityText(o);
+      this.box(x+12,413,82,43,'#FFF8E8',10,'#D3A77F');
+      this.text('♡'.repeat(hearts)+'·'.repeat(3-hearts),x+53,426,15,hearts===3?'#E77993':'#C89072','bold','center');
+      this.text(label,x+53,443,10,ink,'bold','center');
+      this.text(`售价 ${o.food.price} 金币`,x+53,459,9,'#A87943','bold','center');
+    }
+  };
+  P.drawBusiness=function(){
+    business.call(this);
+    this.button('后院',673,12,51,32,()=>this.overlay='yard',true);
+    this.button('商店',730,12,51,32,()=>{this.shopReturn=null;this.overlay='shop';},true);
+    this.button(this.soundOn===false?'静':'♪',790,12,34,32,()=>{this.soundOn=this.soundOn===false;this.toast={text:this.soundOn?'操作声音已打开':'操作声音已关闭',until:Date.now()+1200};},true);
+    const batterAvailable=!this.game.supplySystemEnabled||this.game.stock.dough>0;
+    this.oval(611,258,32,14,'#C89BA3',ink,1.5);this.oval(611,252,34,11,cream,ink,1.5);this.oval(611,252,28,7,batterAvailable?'#F3DFAB':'#E6CFB9');
+    if(!batterAvailable)this.text('空',604,253,9,'#A68575','normal','center');
+    this.line([[617,251],[637,239]],'#B38B70',4);this.oval(617,251,8,4,cream,ink);this.text('面糊',611,273,10,ink,'bold','center');
+    const o=this.game.selected;
+    if(o?.food.id==='egg_pancake'){
+      if(o.state==='waiting')this.text('↓',565,251,18,rose,'bold','center');
+    }
+    if(this.pointer?.moved&&this.pointer.start.x>=572&&this.pointer.start.x<=650&&this.pointer.start.y>=237&&this.pointer.start.y<=276){
+      const p=this.pointer.current;if(batterAvailable){this.line([[p.x,p.y],[p.x+20,p.y-15]],ink,4);this.oval(p.x,p.y,14,7,cream,ink,1.5);this.oval(p.x,p.y-1,10,4,'#F3DFAB');}
+      else this.text('先去后院补货',p.x,p.y-13,12,ink,'bold','center');
+    }
+    this.effects=(this.effects||[]).filter(e=>this.time-e.time<(e.quality?1.1:1.8));
+    for(const e of this.effects){
+      const t=this.time-e.time;this.ctx.save();
+      if(e.quality){
+        this.ctx.globalAlpha=Math.max(0,1-t/1.1);
+        for(let j=0;j<e.hearts;j++)this.text('♡',e.x+(j-(e.hearts-1)/2)*28,e.y-15-t*24,24,rose,'bold','center');
+        for(let j=0;j<9;j++)this.oval(e.x+Math.sin(j*5.3)*58,e.y-8-t*28+Math.cos(j*3.1)*18,2.5,2.5,j%2?'#F3C56D':'#E995A5');
+      }else{
+        this.ctx.globalAlpha=1-t/1.8;this.text('♡ 好吃！',e.x,e.y-t*30,20,rose,'bold','center');
+        this.oval(e.x,e.y+27-t*22,27,10,cream,ink,1);if(e.food)this.drawFood(e.food,e.x,e.y+18-t*22,.28);
+        this.text('+'+e.coins+' 金币',e.x+65,e.y+17-t*24,13,'#AC8044','bold','center');
+      }
+      this.ctx.restore();
+    }
+  };
+})();
+
+</script>
+  <script>
+(function(){
+  const node=typeof module!=='undefined'&&module.exports;
+  const UI=node?require('./ui').UI:window.MoBingUI;
+  const P=UI.prototype,oldStart=P.start,oldMove=P.move,oldEnd=P.end,oldFrame=P.frame;
+  const ink='#765745',cream='#FFF5DE',pink='#E8A5B1',green='#688C56';
+  const crops=['香葱','韭菜','荠菜'];
+  function ensure(g){
+    if(!g.farm)g.farm={wheat:Array.from({length:12},()=>({stage:'ripe',age:1})),vegetables:Array.from({length:8},()=>({stage:'empty',age:0,crop:'香葱'})),grain:0,flour:0,whole:{},mill:0,dough:0,water:false,chop:0,chopCrop:null,seed:'香葱'};
+    return g.farm;
+  }
+  const centre=(kind,i)=>kind==='wheat'?{x:88+i%4*58,y:195+Math.floor(i/4)*76}:{x:365+i%3*70,y:198+Math.floor(i/3)*76};
+  function region(p){
+    if(p.y>=143&&p.y<=407&&p.x>=34&&p.x<=306)return 'wheat';
+    if(p.y>=143&&p.y<=407&&p.x>=314&&p.x<=585)return 'vegetables';
+    if(p.y>=132&&p.y<=326&&p.x>=602&&p.x<764)return 'mill';
+    if(p.y>=132&&p.y<=326&&p.x>=764&&p.x<=950)return 'bowl';
+    if(p.y>=330&&p.y<=443&&p.x>=608&&p.x<=938)return 'table';
+    return null;
+  }
+  function distance(p,a,b){const dx=b.x-a.x,dy=b.y-a.y,t=Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/(dx*dx+dy*dy||1)));return Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy);}
+  function workTravel(kind,a,b){
+    const bounds=kind==='mill'?[590,114,788,344]:[740,114,960,344];
+    let lo=0,hi=1;
+    for(let i=0;i<2;i++){const key=i?'y':'x',delta=b[key]-a[key],min=bounds[i],max=bounds[i+2];
+      if(!delta){if(a[key]<min||a[key]>max)return 0;continue;}
+      const t1=(min-a[key])/delta,t2=(max-a[key])/delta;lo=Math.max(lo,Math.min(t1,t2));hi=Math.min(hi,Math.max(t1,t2));
+    }
+    return Math.hypot(b.x-a.x,b.y-a.y)*Math.max(0,hi-lo);
+  }
+  P.inGarden=function(){return (!this.overlay&&this.game.phase==='prep')||this.overlay==='yard';};
+  P.advanceFarm=function(dt){
+    const f=this.game.farm;if(!f||this.paused)return;let ripe=false;
+    for(const tile of [...f.wheat,...f.vegetables])if(tile.stage==='growing'){tile.age=Math.min(1,tile.age+Math.max(0,dt)/7);if(tile.age>=1){tile.stage='ripe';ripe=true;}}
+    if(ripe)this.save();
+  };
+  P.frame=function(){this.advanceFarm(Math.min(.1,Math.max(0,(Date.now()-this.last)/1000)));oldFrame.call(this);};
+  P.farmNotice=function(text){this.toast={text,until:Date.now()+2400};};
+  P.selectFarmCrop=function(name){
+    const f=ensure(this.game);f.seed=name;f.chopChoice=name;
+    if(f.whole[name]>0){
+      f.cutProgress=f.cutProgress||{};
+      if(f.chopCrop!==name){if(f.chopCrop)f.cutProgress[f.chopCrop]=f.chop;f.chop=f.cutProgress[name]||0;}
+      f.chopCrop=name;this.farmNotice(`案板已换成${name}，切好后可用${['香葱','大葱花'].includes(name)?4:3}次`);
+    }else this.farmNotice(`已选${name}种子；还没有整菜，先种植收获再切配`);
+    this.save();
+  };
+  P.chooseChopCrop=function(){
+    const f=ensure(this.game),wanted=f.chopChoice;
+    if(f.chopCrop&&!(f.whole[f.chopCrop]>0)){f.chopCrop=null;f.chop=0;}
+    if(wanted&&f.whole[wanted]>0&&!f.chop&&f.chopCrop!==wanted){f.chopCrop=wanted;f.chop=f.cutProgress?.[wanted]||0;}
+    if(!f.chopCrop){f.chopCrop=crops.find(n=>(f.whole[n]||0)>0)||null;f.chop=f.cutProgress?.[f.chopCrop]||0;}
+  };
+  P.drawChoppingCrop=function(name,x,y,progress){
+    const c=this.ctx,t=Math.max(0,Math.min(1,progress)),cutX=22-88*t;
+    const scallion=name==='香葱'||name==='大葱花',large=name==='大葱花';
+    c.save();c.translate(x,y);
+    // Keep the stalks at their original thickness; the knife shortens their ends.
+    c.save();c.beginPath();c.rect(-70,-29,Math.max(0,cutX+70),58);c.clip();
+    for(let i=0;i<5;i++){
+      const yy=-17+i*8;
+      this.line([[-65,yy],[22,yy+Math.sin(i)*3]],i%2?'#76A462':'#528C51',large?6:3.5);
+      if(scallion)this.line([[-65,yy],[-49,yy]],'#E6E9BF',large?6:3.5);
+      if(name==='荠菜')for(let j=0;j<4;j++){const xx=-46+j*18;this.oval(xx,yy-3,7,3.5,j%2?'#96B875':'#739B5D');}
+    }
+    c.restore();
+    // More pieces are added to stable positions, without enlarging existing pieces.
+    const count=Math.floor(t*(large?32:40));
+    for(let i=0;i<count;i++){
+      const px=42+(i%8)*9+Math.sin(i*7)*2,py=-20+Math.floor(i/8)*9+Math.cos(i*3)*2;
+      if(scallion){this.oval(px,py,large?4:2.8,large?2.9:2,i%3?'#91B96E':'#D7E1AA','#689352',.8);this.oval(px,py,large?1.8:1.1,large?1.2:.7,'#F1ECC3');}
+      else if(name==='韭菜')this.line([[px-3,py+1],[px+3,py-1]],i%2?'#538650':'#79A460',2.6);
+      else{this.oval(px,py,3.5,2.5,i%2?'#8EB16E':'#6F9959');this.line([[px-2,py],[px+2,py-1]],'#62884E',.8);}
+    }
+    if(t>0&&t<1)this.line([[cutX,-23],[cutX,23]],'#BE9369',1);
+    c.restore();
+  };
+  P.farmStroke=function(a,b){
+    const s=this.pointer?.farm;if(!s)return;
+    const g=this.game,f=ensure(g),travel=['mill','bowl'].includes(s.region)?workTravel(s.region,a,b):Math.hypot(b.x-a.x,b.y-a.y);if(travel<1)return;
+    s.travel+=travel;
+    if(['wheat','vegetables'].includes(s.region)){
+      const tiles=f[s.region];
+      tiles.forEach((tile,i)=>{
+        if(s.visited.has(i)||distance(centre(s.region,i),a,b)>43)return;
+        if(!s.mode)s.mode=tile.stage;
+        if(tile.stage!==s.mode||tile.stage==='growing')return;
+        s.visited.add(i);
+        if(tile.stage==='empty'){
+          if(s.region==='vegetables'&&!g.buySeed(f.seed)){s.blocked=true;this.farmNotice('菜种每份 0.5 金币，钱袋不足，先回小摊卖些早餐');return;}
+          if(s.region==='vegetables'){s.seedCount=(s.seedCount||0)+1;this.farmParticles=this.farmParticles||[];this.farmParticles.push({...centre(s.region,i),at:this.time,label:'菜种 −0.5'});}
+          tile.stage='seeded';tile.crop=s.region==='wheat'?'小麦':f.seed;tile.age=0;
+        }
+        else if(tile.stage==='seeded'){tile.stage='growing';tile.age=0;}
+        else if(tile.stage==='ripe'){
+          tile.stage='empty';tile.age=0;
+          if(s.region==='wheat')f.grain++;else f.whole[tile.crop]=(f.whole[tile.crop]||0)+1;
+          this.farmParticles=this.farmParticles||[];this.farmParticles.push({...centre(s.region,i),at:this.time,label:s.region==='wheat'?'麦穗 +1':`${tile.crop} +1`});
+        }
+        s.changed=true;
+      });
+    }else if(s.region==='mill'){
+      if(!s.loaded){if(f.mill===0){if(f.grain<3){this.farmNotice('先去麦田收 3 把麦穗，再来推磨');return;}f.grain-=3;}s.loaded=true;}
+      f.mill=Math.min(320,f.mill+travel);s.changed=true;
+      if(f.mill>=320){f.flour++;f.mill=0;s.finished=true;this.millDoneAt=this.time;this.farmParticles=this.farmParticles||[];this.farmParticles.push({x:686,y:210,at:this.time,label:'面粉 +1',color:ink});this.farmNotice('面粉磨好了！右边的和面盆可以开工啦');}
+    }else if(s.region==='bowl'){
+      if(!f.water){
+        if(f.flour<=0){this.farmNotice('先把麦穗磨成面粉，才能和面');return;}
+        if(s.travel>=55){f.flour--;f.water=true;this.waterAt=this.time;s.finished=true;s.changed=true;this.farmNotice('水和面粉拌在一起了，再来回揉一揉');}
+      }else{
+        if(g.stock.dough>=12){this.farmNotice('面团篮已经满了，先回小摊用一些');return;}
+        f.dough=Math.min(380,f.dough+travel);s.changed=true;
+        if(f.dough>=380){g.stock.dough+=2;f.dough=0;f.water=false;s.finished=true;this.farmParticles=this.farmParticles||[];this.farmParticles.push({x:851,y:210,at:this.time,label:'面团 +2',color:ink});this.farmNotice('揉好的软面团 +2，已经放进篮子');}
+      }
+    }else if(s.region==='table'&&region(b)==='table'){
+      this.chooseChopCrop();
+      if(!f.chopCrop){this.farmNotice('先收一棵青菜，整棵菜会放到案板上');return;}
+      f.chop=Math.min(360,f.chop+travel);s.changed=true;
+      if(f.chop>=360){const name=f.chopCrop,uses=name==='香葱'?4:3;f.whole[name]--;g.prepared[name]=(g.prepared[name]||0)+uses;g.syncGreensStock();this.chopTransfer={name,uses,at:this.time};if(f.cutProgress)delete f.cutProgress[name];f.chop=0;f.chopCrop=null;s.finished=true;this.farmNotice(`${name}已装碗 +${uses}次 · 现在可用${g.prepared[name]}次`);}
+    }
+  };
+  P.start=function(x,y){oldStart.call(this,x,y);if(!this.inGarden())return;ensure(this.game);const r=region(this.pointer.start);if(r)this.pointer.farm={region:r,visited:new Set(),travel:0,changed:false};};
+  P.move=function(x,y){
+    if(!this.inGarden()){oldMove.call(this,x,y);return;}
+    if(!this.pointer)return;const a=this.pointer.current,b=this.point(x,y);this.pointer.current=b;
+    if(Math.hypot(b.x-this.pointer.start.x,b.y-this.pointer.start.y)>8)this.pointer.moved=true;
+    if(this.pointer.farm&&!this.pointer.farm.finished)this.farmStroke(a,b);
+  };
+  P.end=function(x,y){
+    if(!this.inGarden()){oldEnd.call(this,x,y);return;}
+    if(!this.pointer)return;this.move(x,y);const p=this.point(x,y),s=this.pointer.farm;
+    if(s){
+      if(s.changed){this.save();this.playSfx(s.region==='table'?'cut':'ingredient');if(s.seedCount&&!s.blocked)this.farmNotice(`种下${s.seedCount}份${ensure(this.game).seed} · 菜种花费 ${s.seedCount*.5} 金币`);}
+      else if(!s.blocked)this.farmNotice(s.mode==='growing'?'这片刚浇过水，正在长大，可以先去磨面或照料别的菜':['wheat','vegetables'].includes(s.region)?'按住划过作物：成熟就收割，空地就播种，播完再浇水':'按住工具来回移动，食材会一点点变化');
+      this.pointer=null;return;
+    }
+    const moved=this.pointer.moved;this.pointer=null;if(moved)return;
+    for(let i=this.hits.length-1;i>=0;i--){const h=this.hits[i];if(p.x>=h.x&&p.x<=h.x+h.w&&p.y>=h.y&&p.y<=h.y+h.h){h.fn();break;}}
+  };
+  P.drawPrep=function(){
+    const g=this.game,f=ensure(g),c=this.ctx;
+    this.box(0,0,960,540,'#E7EDDA');
+    this.box(0,0,960,99,'#F8E8DE');
+    this.oval(118,34,73,42,'#F9E7B7');
+    for(let j=0;j<14;j++){const x=j*76;this.oval(x,99,52,37,j%2?'#BACF9C':'#C8DAAB');}
+    // A continuous garden with a fence, soil beds, paths and a pink-roofed workshop.
+    for(let x=8;x<610;x+=31){this.box(x,102,12,47,'#F8E5C9',4,'#B9A180');this.oval(x+6,102,6,7,'#F8E5C9');}
+    this.box(0,116,608,9,'#F0DABC',3);this.box(0,137,608,8,'#E3C69F',3);
+    for(const [fx,fy] of [[16,153],[589,189],[18,298],[599,408],[303,441]]){
+      this.line([[fx,fy+10],[fx,fy-4]],'#8AA675',2);
+      for(let k=0;k<5;k++){const a=k*Math.PI*2/5;this.oval(fx+Math.cos(a)*5,fy-6+Math.sin(a)*5,4,3,k%2?'#F7D3CF':'#FFF1D8');}this.oval(fx,fy-6,2.5,2.5,'#DEB46A');
+    }
+    this.box(25,151,574,267,'#D6C19E',35);this.box(303,150,17,267,'#E8D8B5',8);
+    for(const x of [43,326]){this.box(x,159,251,248,'#B78761',24,'#916D50');for(let row=0;row<3;row++){this.box(x+10,172+row*76,231,56,'#9C704F',16);this.line([[x+22,214+row*76],[x+227,214+row*76]],'#C49A70',3);}}
+    for(let j=0;j<7;j++)this.oval(311,176+j*33,6,10,j%2?'#F2E5C9':'#DBC9A7');
+    for(const bx of [43,326])for(let j=0;j<27;j++){const px=bx+14+(j*53)%221,py=176+(j*37)%217;this.oval(px,py,1.5+j%2,.8,'#BC936E');}
+    for(let j=0;j<25;j++){const x=34+((j*131)%552),y=416+(j%3)*8;this.line([[x,y],[x+3,y-6],[x+7,y]],'#91AF76',2);}
+    this.box(607,110,337,347,'#F4DFBE',20,'#BE9977');
+    for(const yy of [145,181,325,448])this.line([[616,yy],[935,yy]],'#E3CBAA',1);
+    c.beginPath();c.moveTo(593,116);c.lineTo(631,65);c.lineTo(921,65);c.lineTo(958,116);c.closePath();c.fillStyle=pink;c.fill();c.strokeStyle='#B67E83';c.lineWidth=3;c.stroke();
+    for(let x=625;x<940;x+=27)this.line([[x,114],[x-10,77]],'#F7CDD0',3);
+    for(let x=610;x<948;x+=26)this.oval(x,115,13,7,'#E9ABB4','#BC8389',1);
+    this.box(695,86,166,34,cream,9,'#C48E86');this.text('后院小作坊',778,103,19,ink,'bold','center');
+    this.box(27,20,274,57,cream,19,'#D6B5A0');this.text('馍饼家的小院',48,43,25,ink,'bold');this.text('种下、照料、收获，慢慢备好一日三餐',48,65,10,ink);
+    this.button('去小商店',800,18,134,36,()=>{this.shopReturn=this.overlay;this.overlay='shop';},true);
+    this.text(`麦穗 ${f.grain}   面粉 ${f.flour}   面团 ${g.stock.dough}`,334,37,14,ink,'bold');
+    this.text(`钱袋 ${g.coins} · 菜种 0.5金币/份 · 播种时扣款`,334,62,11,green);
+    this.box(66,121,108,29,cream,7,'#B69B78');this.text('小麦田',120,136,16,ink,'bold','center');
+    this.box(378,121,118,29,cream,7,'#B69B78');this.text('四季小菜地',437,136,15,ink,'bold','center');
+    this.text(`可收 ${f.wheat.filter(t=>t.stage==='ripe').length} · 生长 ${f.wheat.filter(t=>t.stage==='growing').length}`,168,436,11,green,'bold','center');
+    this.text(`可收 ${f.vegetables.filter(t=>t.stage==='ripe').length} · 生长 ${f.vegetables.filter(t=>t.stage==='growing').length}`,449,436,11,green,'bold','center');
+    for(const kind of ['wheat','vegetables'])f[kind].forEach((tile,i)=>{
+      const p=centre(kind,i);this.oval(p.x,p.y+22,23,7,'#886348');
+      if(tile.stage==='empty'){this.line([[p.x-10,p.y+12],[p.x+9,p.y+12]],'#C99A70',2);return;}
+      if(tile.stage==='seeded'){for(let k=-1;k<=1;k++)this.oval(p.x+k*9,p.y+10,3,2,'#DDBA7B');this.text('水',p.x,p.y-10,11,'#C1E5E5','bold','center');return;}
+      const ripe=tile.stage==='ripe',grow=ripe?1:.25+tile.age*.75;
+      if(kind==='wheat'){
+        for(let k=-2;k<=2;k++){const px=p.x+k*8,tip=px+Math.sin(this.time*1.8+i+k)*3,top=p.y+17-grow*(43+(k%2)*7);
+          this.line([[px,p.y+19],[tip,top]],ripe?'#B9A052':'#81A35D',2.5);
+          for(let n=0;n<4;n++){const yy=top+n*6;
+            for(const side of [-1,1]){c.save();c.translate(tip+side*3,yy+(side>0?3:0));c.rotate(side*.5);this.oval(0,0,3,4.4,ripe?(side<0?'#F4D48B':'#E9BD6B'):'#AED07C',ripe?'#B79550':'#83A260',.65);this.line([[0,-1],[0,-3]],ripe?'#FFF0B9':'#D6E7A6',.8);c.restore();}
+          }
+          this.line([[tip,top-2],[tip+1,top-9]],ripe?'#D6B466':'#96B56D',1);
+        }
+      }else{c.save();c.translate(p.x,p.y+9);c.scale(.58*grow,.65*grow);this.drawWholeCrop(tile.crop,0,0,1,2);c.restore();}
+      if(!ripe){this.box(p.x-18,p.y+27,36,4,'#7D7353',2);this.box(p.x-18,p.y+27,36*tile.age,4,'#B3D39A',2);}
+    });
+    // Mill: grains and flour remain visible as separate materials.
+    this.box(624,278,126,18,'#D7AF81',5,ink);this.oval(686,243,54,33,'#B7A392',ink,2);this.oval(686,224,55,27,'#E1D5BF',ink,2);
+    for(let j=0;j<7;j++)this.line([[645+j*13,242],[646+j*13,253]],'#A08B79',1.5);
+    this.oval(678,222,6,3,'#89705B');if(f.mill>0)for(let j=0;j<Math.ceil(6*(1-f.mill/320));j++)this.oval(674+j%3*4,217+Math.floor(j/3)*3,2,1,'#D7AF62');
+    for(let j=0;j<8;j++){const a=j*Math.PI/4;this.line([[686+Math.cos(a)*19,224+Math.sin(a)*8],[686+Math.cos(a)*44,224+Math.sin(a)*20]],'#B5A58E',1.5);}
+    const angle=f.mill/320*Math.PI*4;this.line([[686,223],[686+Math.cos(angle)*38,223+Math.sin(angle)*20]],'#987253',7);this.oval(686,223,10,5,'#8C7257');
+    const milling=f.mill/320,justMilled=this.millDoneAt!==undefined&&this.time-this.millDoneAt<1;
+    if(milling>0||justMilled){this.oval(713,269,7+15*(justMilled?1:milling),3+4*(justMilled?1:milling),'#FFF1D4');if(this.pointer?.farm?.region==='mill'&&!this.pointer.farm.finished)for(let j=0;j<7;j++){const fall=(this.time*32+j*4)%24;this.oval(708+Math.sin(j*3)*5,247+fall,1.5,1,'#FFF6DF');}}
+    this.text('石磨',686,163,17,ink,'bold','center');this.text(f.mill>0?'麦粒磨碎，面粉慢慢落下':'收麦后，按住来回推磨',686,304,10,ink,'normal','center');
+    this.box(641,313,90,5,'#D7C3A3',2);this.box(641,313,90*f.mill/320,5,'#C39468',2);
+    // Water jug and dough bowl.
+    this.text('和面盆',850,163,17,ink,'bold','center');this.oval(851,247,62,35,'#DDA7A1',ink,2);this.oval(851,231,64,25,cream,ink,2);
+    this.line([[806,252],[818,264],[839,271]],'#F0C8BC',3);
+    for(const px of [836,851,866]){this.oval(px,266,2.5,3,'#FFF1DE');this.oval(px-3,264,2,2,'#FFF1DE');this.oval(px+3,264,2,2,'#FFF1DE');}
+    const knead=this.pointer?.farm?.region==='bowl'?Math.sin(this.pointer.farm.travel/17)*6:0;
+    if(f.water){const smooth=f.dough/380;this.oval(851,230,36+knead,18-knead*.25,'#F2D9AE','#C6A175',1.5);
+      for(let j=0;j<Math.ceil((1-smooth)*10);j++){const xx=851+Math.sin(j*7)*25,yy=230+Math.cos(j*4)*10;this.oval(xx,yy,5,3,'#E7C99C');this.line([[xx-3,yy-1],[xx+1,yy-2]],'#FFF0D0',1.2);}
+      if(smooth>.3)this.line([[831,228],[841,220],[858,219]],'#FFF0D1',2);
+    }
+    else if(f.flour>0){this.oval(851,230,38,13,'#F0DFC3');for(let j=0;j<12;j++)this.oval(851+Math.sin(j*8)*30,228+Math.cos(j*4)*7,3,2,'#FFF8E5');}
+    else{this.oval(851,234,38,12,'#EED7C7','#D4B4A0',1);this.line([[827,232],[838,238],[858,239]],'#FFF2DF',2);this.text('等面粉',851,232,10,'#AB8573','normal','center');}
+    this.box(785,195,24,34,'#ADCED2',7,ink);this.oval(797,195,12,5,'#E1F2EE');
+    if(this.waterAt!==undefined&&this.time-this.waterAt<.7){const t=(this.time-this.waterAt)/.7;c.save();c.globalAlpha=1-t;this.line([[807,210],[833,228]],'#A9CCD2',4);for(let j=0;j<4;j++)this.oval(829+j*5,231+Math.sin(j)*4,1.7,1.2,'#D5E8E5');c.restore();}
+    this.text(f.water?'来回揉，面团慢慢成形':f.flour>0?'划动倒水，把面粉拌湿':'先在左边磨好面粉',850,304,10,ink,'normal','center');
+    this.box(804,313,90,5,'#D7C3A3',2);this.box(804,313,90*f.dough/380,5,'#C39468',2);
+    // Large cutting bench shows an uncut bunch becoming chopped greens.
+    this.box(620,365,309,76,'#BF947A',12,ink);
+    this.box(627,361,296,61,'#F5D3D0',8);
+    for(let j=0;j<15;j++)this.box(629+j*20,362,7,57,'#E9B9BB',1);
+    for(const yy of [370,390,410])this.box(628,yy,292,5,'#EDBEC0',1);
+    this.box(635,358,279,64,'#B88D6A',12);this.box(631,352,284,64,'#EFCEA0',12,'#AE8462');
+    for(const [xx,yy,ww] of [[646,359,67],[749,408,95],[655,402,46],[838,359,53]]){this.line([[xx,yy],[xx+ww*.45,yy+1],[xx+ww,yy]],'#DAB386',1);}
+    this.oval(899,384,5,9,'#BD926C');this.oval(899,383,3,7,'#E4BC8B');
+    this.chooseChopCrop();
+    if(f.chopCrop){const ratio=f.chop/360;this.drawChoppingCrop(f.chopCrop,719,386,ratio);this.text(`${f.chopCrop} · 切好 ${Math.round(ratio*100)}%`,774,344,12,ink,'bold','center');}
+    else this.text('收下的整棵青菜放在这里',774,387,13,ink,'normal','center');
+    if(this.pointer?.farm?.region!=='table'){c.save();c.translate(874,381);c.rotate(-.4);this.box(-11,-13,19,25,'#D5DEDA',3,ink);this.line([[-9,10],[6,10]],'#F8F9EC',2);this.box(-4,-32,12,21,'#B78462',4,ink);this.oval(2,-24,1.7,1.7,'#EBD2A3');c.restore();}
+    this.text('大案板 · 按住来回切配',775,438,11,ink,'bold','center');
+    for(const [x,label,count] of [[647,'麦穗',f.grain],[714,'面粉',f.flour]]){this.box(x-22,475,44,37,'#D8BB88',12,ink);this.oval(x,478,21,8,label==='面粉'?'#FFF1D6':'#DCAF60',ink,1);this.line([[x-18,490],[x+18,490]],'#A98258',2);this.text(`${label} ${count}`,x,522,11,ink,'bold','center');}
+    // Seed bags are choices, while planting happens on the soil itself.
+    crops.forEach((name,i)=>{const x=40+i*139;this.box(x,456,128,61,f.seed===name?'#FFF0E3':'#F5E7D1',12,f.seed===name?'#B77A84':'#BDAB8C');this.drawWholeCrop(name,x+20,483,.3,2);this.text(name,x+42,470,12,ink,'bold');this.text(`整菜 ${f.whole[name]||0}份`,x+42,487,10,ink);this.text(`可用${g.prepared[name]||0}次`,x+42,504,10,green,'bold');this.hit(x,455,128,63,()=>this.selectFarmCrop(name));});
+    const bowlName=this.chopTransfer&&this.time-this.chopTransfer.at<1.2?this.chopTransfer.name:f.chopChoice||f.seed||'香葱';
+    this.box(460,456,143,61,'#FBE9E4',12,'#D5ABA9');this.drawIngredient(bowlName,488,481,.55,(g.prepared[bowlName]||0)>0);this.text(bowlName==='香葱'?'葱花碗':`${bowlName}碗`,514,472,11,ink,'bold');this.text(`一份切好用${bowlName==='香葱'?4:3}次`,514,489,10,ink);this.text('切好自动装碗',514,505,10,green);
+    const transfer=this.chopTransfer;
+    if(transfer){const t=(this.time-transfer.at)/1.2;if(t>=0&&t<1){for(let i=0;i<14;i++){const q=Math.max(0,Math.min(1,(t-i*.018)/.65)),xx=780+(488-780)*q+(i%4-1.5)*6,yy=382+(480-382)*q-Math.sin(q*Math.PI)*52+Math.floor(i/4)*4;if(q<1){if(transfer.name==='香葱'){this.oval(xx,yy,3,2,'#95B970','#61864E',.7);this.oval(xx,yy,1.1,.7,'#F7EDCD');}else if(transfer.name==='韭菜')this.line([[xx-3,yy+1],[xx+3,yy-1]],'#638D51',2.5);else this.oval(xx,yy,3.5,2.5,'#82A567');}}c.save();c.globalAlpha=1-t;this.text(`+${transfer.uses}次`,488,452-t*20,13,green,'bold','center');c.restore();}}
+    this.button(this.overlay==='yard'?'回小摊':g.prepReady()?'开摊营业':'继续备货',774,468,151,42,this.overlay==='yard'?()=>this.overlay=null:g.prepReady()?()=>{g.openShop();this.save();}:()=>this.farmNotice('先备好面团、小菜，再去商店买一份食材'),true);
+    this.text('点菜牌选种 / 换菜 · 空地播种 → 浇水 → 收割',45,532,11,ink);
+    const action=this.pointer?.farm,p=this.pointer?.current;
+    if(action&&p&&this.pointer.moved){
+      const mode=action.mode;
+      if(mode==='ripe'&&action.region==='wheat'){this.line([[p.x+15,p.y-18],[p.x,p.y+12]],'#916D4E',6);c.beginPath();c.arc(p.x+3,p.y-9,19,.2,Math.PI*1.3);c.strokeStyle='#D5DEDA';c.lineWidth=5;c.stroke();}
+      else if(mode==='ripe'){this.oval(p.x,p.y,15,10,'#F4CEB5',ink,1.5);this.line([[p.x-8,p.y-3],[p.x-5,p.y-15]],'#79A35E',3);this.line([[p.x,p.y-2],[p.x+4,p.y-19]],'#699950',3);}
+      else if(mode==='seeded'){this.box(p.x-14,p.y-21,25,23,'#99C4CD',5,ink);for(let j=0;j<4;j++)this.line([[p.x+10+j*5,p.y],[p.x+15+j*5,p.y+9]],'#9CCEDA',2);}
+      else if(mode==='empty'){this.oval(p.x,p.y-6,13,8,'#F4CEB5',ink,1);for(let j=0;j<4;j++)this.oval(p.x-12+j*8,p.y+12+(j%2)*5,2,2,'#E5BD77');}
+      else if(action.region==='table'&&f.chopCrop&&!action.finished){
+        const knifeX=741-88*Math.min(1,f.chop/360),lift=Math.abs(Math.sin(action.travel/18))*9,knifeY=386-lift;
+        this.oval(knifeX+3,405,15,3,'rgba(114,77,53,.13)');this.box(knifeX-8,knifeY-30,18,31,'#D7DEDA',3,ink);this.line([[knifeX-8,knifeY+1],[knifeX+10,knifeY+1]],'#FFFDF1',2);
+        this.box(knifeX-5,knifeY-47,12,20,'#B78665',4,ink);this.oval(knifeX+1,knifeY-39,1.6,1.6,'#ECD1A9');
+      }
+      else this.oval(p.x,p.y,13,9,'#F4CEB5',ink,1.5);
+    }
+    this.farmParticles=(this.farmParticles||[]).filter(v=>this.time-v.at<1.2);for(const v of this.farmParticles){c.save();c.globalAlpha=1-(this.time-v.at)/1.2;this.text(v.label,v.x,v.y-25-(this.time-v.at)*22,12,v.color||'#FFF5D2','bold','center');c.restore();}
+    if(this.toast&&Date.now()<this.toast.until){this.box(220,78,430,30,cream,12,'#CFAB91');this.text(this.toast.text,435,93,12,ink,'bold','center');}
+  };
+  if(node)module.exports={ensure,region,centre};
+})();
+
+</script>
+  <script>
+    const storage = {
+      get() { return JSON.parse(localStorage.getItem('mobing-save-v3') || '{}'); },
+      set(value) { localStorage.setItem('mobing-save-v3', JSON.stringify(value)); }
+    };
+    const ui = new window.MoBingUI(document.getElementById('game'), storage);
+    if (new URLSearchParams(location.search).has('food-art')) ui.overlay = 'book';
+    if (new URLSearchParams(location.search).has('garden')) ui.overlay = 'yard';
+    window.addEventListener('resize', () => ui.resize());
+    ui.canvas.addEventListener('pointerdown', e => { ui.canvas.setPointerCapture(e.pointerId); ui.start(e.clientX, e.clientY); });
+    ui.canvas.addEventListener('pointermove', e => ui.move(e.clientX, e.clientY));
+    ui.canvas.addEventListener('pointerup', e => ui.end(e.clientX, e.clientY));
+    ui.canvas.addEventListener('pointercancel', () => { ui.pointer = null;ui.save(); });
+    window.addEventListener('pagehide', () => ui.save());
+    document.addEventListener('visibilitychange', () => { ui.paused=document.hidden;if(document.hidden)ui.save();else ui.last=Date.now(); });
+    window.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && ui.game.phase === 'welcome' && !ui.overlay) ui.game.beginPrep();
+      if (e.key === 'Escape') ui.overlay = null;
+    });
+    function loop() { ui.frame(); requestAnimationFrame(loop); }
+    loop();
+  </script>
+</body>
+</html>
