@@ -10,7 +10,9 @@
 
 电脑用鼠标按住拖动，手机用手指划动，横屏体验最佳（竖屏会自动旋转画面）。天数、金币、备货与厨具升级等进度保存在浏览器本地。
 
-![工作界面](screenshots/工作界面1.png)
+![工作界面](screenshots/gameplay.png)
+
+![菜谱](screenshots/menu.png)
 
 ## 玩法概览
 
